@@ -1,0 +1,26 @@
+[tool.poetry]
+name = "vhskeelz-db-project"
+version = "0.1.0"
+description = ""
+authors = ["Ori Hoch <ori@uumpa.com>"]
+readme = "README.md"
+packages = [{include = "vhskeelz_db"}]
+
+[tool.poetry.dependencies]
+python = "^3.8"
+google-api-python-client = "^2.93.0"
+google-auth = "^2.22.0"
+google-auth-oauthlib = "^1.0.0"
+google-auth-httplib2 = "^0.1.0"
+requests = "^2.31.0"
+jupyter = "^1.0.0"
+selenium = "^4.10.0"
+python-dotenv = "^1.0.0"
+click = "^8.1.4"
+
+[build-system]
+requires = ["poetry-core"]
+build-backend = "poetry.core.masonry.api"
+
+[tool.poetry.scripts]
+vhskeelz-db = "vhskeelz_db.cli:main"

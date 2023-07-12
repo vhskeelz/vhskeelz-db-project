@@ -1,0 +1,162 @@
+import os
+import time
+import glob
+import random
+import shutil
+import datetime
+from contextlib import contextmanager
+
+from selenium import webdriver
+from selenium.webdriver.common.by import By
+from selenium.webdriver.chrome.options import Options
+from selenium.webdriver.support.ui import WebDriverWait
+from selenium.webdriver.common.action_chains import ActionChains
+from selenium.webdriver.support import expected_conditions as EC
+from selenium.common.exceptions import ElementNotInteractableException, TimeoutException
+
+from . import config
+
+
+def debug_dump(driver, basename='debug_dump'):
+    directory = os.path.join(config.DATA_DIR, 'debug_dumps')
+    os.makedirs(directory, exist_ok=True)
+    prefix = datetime.datetime.now().strftime('%Y-%m-%d_%H-%M-%S')
+    screenshot_filename = os.path.join(directory, f"{prefix}_{basename}.png")
+    pagedump_filename = os.path.join(directory, f"{prefix}_{basename}.html")
+    driver.save_screenshot(screenshot_filename)
+    with open(pagedump_filename, "w") as f:
+        f.write(driver.page_source)
+    print(f'browser screenshot and html saved to {screenshot_filename} and {pagedump_filename}')
+
+
+def get_driver(default_download_directory, headless=False):
+    chrome_options = Options()
+    chrome_options.add_argument("window-size=800x600")
+    if headless:
+        chrome_options.headless = True
+    chrome_options.add_experimental_option("prefs", {
+        "download.default_directory": default_download_directory,
+        "download.prompt_for_download": False,
+        "profile.content_settings.exceptions.automatic_downloads.*.setting": 1,
+    })
+    return webdriver.Chrome(options=chrome_options)
+
+
+@contextmanager
+def driver_contextmanager(default_download_directory, headless=False):
+    driver = get_driver(default_download_directory, headless=headless)
+    try:
+        yield driver
+    finally:
+        driver.quit()
+
+
+def sleep_random(plus_seconds=0):
+    seconds = random.randint(1, 5) / 30 + plus_seconds
+    # print(f'Sleeping for {seconds} seconds...')
+    time.sleep(seconds)
+
+
+def send_input_keys(get_elt, keys):
+    for key in f'{keys}\ue007':
+        sleep_random()
+        try:
+            get_elt().send_keys(key)
+        except ElementNotInteractableException:
+            sleep_random(3)
+            try:
+                get_elt().send_keys(key)
+            except ElementNotInteractableException:
+                sleep_random(10)
+                get_elt().send_keys(key)
+
+
+def login(driver, username, password):
+    print(f"login with username '{username}', password length: {len(password)}")
+    print('Sending username...')
+    send_input_keys(lambda: WebDriverWait(driver, 10).until(EC.presence_of_element_located((By.XPATH, '//input[@type="email"]'))), username)
+    sleep_random(3)
+    print('Sending password...')
+    send_input_keys(lambda: WebDriverWait(driver, 10).until(EC.presence_of_element_located((By.XPATH, '//input[@type="password"]'))), password)
+    print('OK')
+
+
+def export(driver, debug=False):
+    print("Starting export")
+    retry_num = 0
+    while True:
+        print("Opening context menu...")
+        ActionChains(driver).move_to_element_with_offset(driver.find_element(By.TAG_NAME, 'html'), 10, 10).click().pause(1).move_by_offset(250, 250).pause(1).context_click().perform()
+        sleep_random(5)
+        if debug:
+            debug_dump(driver)
+        try:
+            print("Clicking export button in context menu...")
+            WebDriverWait(driver, 10).until(EC.presence_of_element_located((By.XPATH, '//button[contains(text(), "Export")]'))).click()
+            sleep_random(5)
+            if debug:
+                debug_dump(driver)
+            print("Clicking export button in export dialog...")
+            WebDriverWait(driver, 10).until(EC.presence_of_element_located((By.XPATH, '//span[contains(text(), "Export")]'))).click()
+            if debug:
+                debug_dump(driver)
+        except TimeoutException:
+            retry_num += 1
+            if retry_num > 5:
+                raise
+            else:
+                print(f"Failed, retrying ({retry_num}/5)...")
+                if debug:
+                    debug_dump(driver)
+                sleep_random(10)
+                if debug:
+                    debug_dump(driver)
+        else:
+            print("OK")
+            break
+
+
+def save_reports(report_urls, target_path, debug=False, headless=False):
+    assert config.EXTRACT_DATA_USERNAME
+    assert config.EXTRACT_DATA_PASSWORD
+    assert not os.path.exists(target_path), 'Target path already exists, will not overwrite'
+    os.makedirs(target_path)
+    print(f"Saving reports to '{target_path}'")
+    report_files = []
+    report_url_files = {}
+    with driver_contextmanager(target_path, headless=headless) as driver:
+        is_first = True
+        for report_url in report_urls:
+            print(f'Extracting report {report_url}...')
+            driver.get(report_url)
+            if is_first:
+                is_first = False
+                login(driver, config.EXTRACT_DATA_USERNAME, config.EXTRACT_DATA_PASSWORD)
+            sleep_random(10)
+            export(driver, debug=debug)
+            print("Waiting for download to finish...")
+            found_new_file = None
+            start_time = datetime.datetime.now()
+            while not found_new_file:
+                time.sleep(2)
+                print('.', end='', flush=True)
+                for filepath in glob.glob(os.path.join(target_path, '*.csv')):
+                    filename = os.path.basename(filepath)
+                    if filename not in report_files:
+                        report_files.append(filename)
+                        found_new_file = filename
+                        break
+                if (datetime.datetime.now() - start_time).total_seconds() > 60 * 5:
+                    raise Exception('Timeout waiting for file to download')
+            report_url_files[report_url] = found_new_file
+    return report_url_files
+
+
+def main(force=False, debug=False, headless=False):
+    assert len(config.EXTRACT_DATA_REPORTS) > 0
+    if force:
+        shutil.rmtree(config.EXTRACT_DATA_PATH, ignore_errors=True)
+    else:
+        assert not os.path.exists(config.EXTRACT_DATA_PATH)
+    print(f'Extracting data to {config.EXTRACT_DATA_PATH}...')
+    return save_reports(config.EXTRACT_DATA_REPORTS, config.EXTRACT_DATA_PATH, debug=debug, headless=headless)
