@@ -7,10 +7,19 @@ def main():
 
 
 @main.command()
-@click.option('--force', is_flag=True)
-@click.option('--debug', is_flag=True)
-@click.option('--headless', is_flag=True)
+@click.option('--only-table-name')
 def extract_data(**kwargs):
     from . import extract_data
-    for report_url, report_filename in extract_data.main(**kwargs):
-        print(f'{report_url} -> {report_filename}')
+    for table_name in extract_data.main(**kwargs):
+        print(f'Extracted {table_name}')
+    print("OK")
+
+
+@main.command()
+@click.option('--extract', is_flag=True)
+@click.option('--only-table-name')
+def load_data(**kwargs):
+    from . import load_data
+    for table_name in load_data.main(**kwargs):
+        print(f'Loaded {table_name}')
+    print("OK")
