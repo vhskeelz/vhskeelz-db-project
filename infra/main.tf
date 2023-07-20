@@ -68,3 +68,11 @@ output "google_service_account_key" {
   value = google_service_account_key.main.private_key
   sensitive = true
 }
+
+resource "google_storage_bucket" "private" {
+  name = "vhskeelz-db-private"
+  location = local.google_region
+  versioning {
+      enabled = false
+  }
+}

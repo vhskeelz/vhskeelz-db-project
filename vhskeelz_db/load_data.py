@@ -68,11 +68,15 @@ def main(extract=False, only_table_name=None):
             if table['type'] == 'view':
                 tables_start_with = table['tables_start_with']
                 view_table_names = [n for n in config.EXTRACT_DATA_TABLES.keys() if n.startswith(tables_start_with) and n != name]
-                sql = f'create or replace view {name} as\n'
+                sql = f'drop view if exists __temp__{name};\n'
+                sql += f'create materialized view __temp__{name} as\n'
                 for i, view_table_name in enumerate(view_table_names):
                     if i > 0:
                         sql += 'union all\n'
                     sql += f'select * from {view_table_name}\n'
+                sql += ';\n'
+                sql += f'drop view if exists {name};\n'
+                sql += f'alter materialized view __temp__{name} rename to {name};\n'
                 with get_db_engine().connect() as conn:
                     with conn.begin():
                         conn.execute(sql)
