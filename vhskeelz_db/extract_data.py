@@ -7,14 +7,14 @@ import gspread
 from google.oauth2.service_account import Credentials as ServiceAccountCredentials
 
 
-def main(only_table_name=None):
-    print(f'Authorizing Google Sheets service account using delegation to {config.EXTRACT_DATA_USERNAME}...')
+def main(log, only_table_name=None):
+    log(f'Authorizing Google Sheets service account using delegation to {config.EXTRACT_DATA_USERNAME}...')
     gc = gspread.authorize(
         ServiceAccountCredentials.from_service_account_file(
             config.SERVICE_ACCOUNT_FILE, scopes=gspread.auth.READONLY_SCOPES
         ).with_subject(config.EXTRACT_DATA_USERNAME)
     )
-    print('Fetching matching sheets...')
+    log('Fetching matching sheets...')
     matching_tables = {}
     spreadsheets = gc.list_spreadsheet_files()
     spreadsheets.sort(key=lambda x: x['createdTime'], reverse=True)
@@ -27,7 +27,7 @@ def main(only_table_name=None):
                 break
         if len(matching_tables) == len(extract_data_tables):
             break
-    print(f'Found {len(matching_tables)} matching sheets')
+    log(f'Found {len(matching_tables)} matching sheets')
     os.makedirs(config.EXTRACT_DATA_PATH, exist_ok=True)
     for table_name, spreadsheet in matching_tables.items():
         if only_table_name is None or only_table_name == table_name:

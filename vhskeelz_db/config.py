@@ -21,3 +21,7 @@ PGSQL_PASSWORD = os.environ.get('PGSQL_PASSWORD', '123456')
 PGSQL_HOST = os.environ.get('PGSQL_HOST', 'localhost')
 PGSQL_PORT = os.environ.get('PGSQL_PORT', '5432')
 PGSQL_DB = os.environ.get('PGSQL_DB', 'postgres')
+
+PROCESSING_RECORD_ENABLED = os.environ.get('PROCESSING_RECORD_ENABLED') == 'true'
+PROCESSING_RECORD_ID = os.environ.get('PROCESSING_RECORD_ID')
+PROCESSING_RECORD_NAME = os.environ.get('PROCESSING_RECORD_NAME')

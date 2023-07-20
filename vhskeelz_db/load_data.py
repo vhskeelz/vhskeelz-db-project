@@ -1,18 +1,13 @@
 import os
 from textwrap import dedent
-from urllib.parse import quote_plus
+
 
 import dataflows as DF
-from sqlalchemy.engine.create import create_engine
+
 
 from . import config, extract_data
-
-
-def get_db_engine():
-    return create_engine(
-        f'postgresql+psycopg2://{config.PGSQL_USER}:{quote_plus(config.PGSQL_PASSWORD)}@{config.PGSQL_HOST}:{config.PGSQL_PORT}/{config.PGSQL_DB}',
-        echo=False
-    )
+from .db import get_db_engine
+from .processing_record import processing_record
 
 
 class df_load_reduplicate_headers(DF.load):
@@ -52,10 +47,10 @@ def load_table(table_name):
                 '''))
 
 
-def main(extract=False, only_table_name=None):
+def main(log, extract=False, only_table_name=None):
     if extract:
-        for table_name in extract_data.main(only_table_name=only_table_name):
-            print(f'Extracted {table_name}')
+        for table_name in extract_data.main(log, only_table_name=only_table_name):
+            log(f'Extracted {table_name}')
             load_table(table_name)
             yield table_name
     else:
@@ -68,16 +63,16 @@ def main(extract=False, only_table_name=None):
             if table['type'] == 'view':
                 tables_start_with = table['tables_start_with']
                 view_table_names = [n for n in config.EXTRACT_DATA_TABLES.keys() if n.startswith(tables_start_with) and n != name]
-                sql = f'drop view if exists __temp__{name};\n'
-                sql += f'create materialized view __temp__{name} as\n'
+                sql = f'drop table if exists __temp__{name};\n'
+                sql += f'create table __temp__{name} as\n'
                 for i, view_table_name in enumerate(view_table_names):
                     if i > 0:
                         sql += 'union all\n'
                     sql += f'select * from {view_table_name}\n'
                 sql += ';\n'
-                sql += f'drop view if exists {name};\n'
-                sql += f'alter materialized view __temp__{name} rename to {name};\n'
+                sql += f'drop table if exists {name};\n'
+                sql += f'alter table __temp__{name} rename to {name};\n'
                 with get_db_engine().connect() as conn:
                     with conn.begin():
                         conn.execute(sql)
-                print(f'Updated view {name}')
+                log(f'Updated view {name}')

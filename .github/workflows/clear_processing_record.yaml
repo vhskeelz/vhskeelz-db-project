@@ -1,12 +1,9 @@
 on:
   workflow_dispatch:
-  push:
-    branches:
-      - main
   schedule:
-    - cron: '0 0 * * *'
+    - cron: '0 0 * * 4'
 jobs:
-  db_update:
+  clear_processing_record:
     runs-on: ubuntu-22.04
     steps:
       - uses: actions/checkout@v3
@@ -17,8 +14,5 @@ jobs:
           cache: 'poetry'
       - env:
           SERVICE_ACCOUNT_B64: ${{ secrets.SERVICE_ACCOUNT_B64 }}
-          PROCESSING_RECORD_ENABLED: "true"
-          PROCESSING_RECORD_NAME: github_db_update
-          PROCESSING_RECORD_ID: ${{ github.run_id }}
-          VHSKEELZ_DB_ARGS: "load-data --extract"
+          VHSKEELZ_DB_ARGS: "processing-record-clear"
         run: bin/ci_run.sh
