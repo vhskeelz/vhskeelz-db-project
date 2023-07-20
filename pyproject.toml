@@ -7,7 +7,7 @@ readme = "README.md"
 packages = [{include = "vhskeelz_db"}]
 
 [tool.poetry.dependencies]
-python = "^3.8"
+python = "^3.10"
 google-api-python-client = "^2.93.0"
 google-auth = "^2.22.0"
 google-auth-oauthlib = "^1.0.0"

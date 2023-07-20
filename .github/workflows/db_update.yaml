@@ -1,0 +1,29 @@
+on:
+  workflow_dispatch:
+  schedule:
+    - cron: '0 0 * * *'
+jobs:
+  db_update:
+    runs-on: ubuntu-22.04
+    steps:
+      - uses: actions/checkout@v3
+      - run: pipx install poetry
+      - uses: actions/setup-python@v4
+        with:
+          python-version: '3.10'
+          cache: 'poetry'
+      - env:
+          EXTRACT_DATA_USERNAME: ${{ secrets.EXTRACT_DATA_USERNAME }}
+          EXTRACT_DATA_PASSWORD: ${{ secrets.EXTRACT_DATA_PASSWORD }}
+          SERVICE_ACCOUNT_B64: ${{ secrets.SERVICE_ACCOUNT_B64 }}
+          EXTRACT_DATA_TABLES: ${{ secrets.EXTRACT_DATA_TABLES }}
+          PGSQL_USER: ${{ secrets.PGSQL_USER }}
+          PGSQL_PASSWORD: ${{ secrets.PGSQL_PASSWORD }}
+          PGSQL_HOST: ${{ secrets.PGSQL_HOST }}
+          PGSQL_PORT: ${{ secrets.PGSQL_PORT }}
+          PGSQL_DB: ${{ secrets.PGSQL_DB }}
+        run: |
+          echo "${SERVICE_ACCOUNT_B64}" | base64 -d > service_account.json &&\
+          export SERVICE_ACCOUNT_FILE=service_account.json &&\
+          poetry install &&\
+          poetry run vhskeelz-db load-data --extract
