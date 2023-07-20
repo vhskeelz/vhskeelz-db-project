@@ -14,10 +14,16 @@ terraform {
   }
 }
 
+locals {
+  google_project = "skeelz-retrain-api"
+  google_region  = "europe-west9"
+  google_zone    = "europe-west9-c"
+}
+
 provider "google" {
-  project = "skeelz-retrain-api"
-  region  = "europe-west9"
-  zone    = "europe-west9-c"
+  project = local.google_project
+  region  = local.google_region
+  zone    = local.google_zone
 }
 
 resource "google_sql_database_instance" "main" {
@@ -34,4 +40,31 @@ resource "google_sql_database_instance" "main" {
       hour = 22
     }
   }
+}
+
+resource "google_secret_manager_secret" "env" {
+  secret_id = "vhskeelz-db-env"
+  replication {
+    user_managed {
+      replicas {
+        location = local.google_region
+      }
+    }
+  }
+}
+
+resource "google_service_account" "main" {
+  account_id = local.google_project
+  display_name = local.google_project
+  timeouts {}
+}
+
+resource "google_service_account_key" "main" {
+  service_account_id = google_service_account.main.name
+  public_key_type = "TYPE_X509_PEM_FILE"
+}
+
+output "google_service_account_key" {
+  value = google_service_account_key.main.private_key
+  sensitive = true
 }

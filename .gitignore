@@ -237,3 +237,4 @@ fabric.properties
 
 .data
 /*.ipynb
+.env.bak

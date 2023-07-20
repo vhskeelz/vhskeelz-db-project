@@ -23,3 +23,10 @@ def load_data(**kwargs):
     for table_name in load_data.main(**kwargs):
         print(f'Loaded {table_name}')
     print("OK")
+
+
+@main.command()
+def populate_mailing_list_data():
+    from . import populate_mailing_list_data
+    populate_mailing_list_data.main()
+    print("OK")
