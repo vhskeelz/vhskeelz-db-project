@@ -21,12 +21,6 @@ Restore secrets:
 bin/env_secret_restore.sh
 ```
 
-Show diff between local .env and stored .env:
-
-```
-bin/env_secret_diff.sh
-```
-
 Save updated secrets from local .env:
 
 ```

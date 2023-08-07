@@ -61,8 +61,30 @@ def load_data(**kwargs):
 
 
 @main.command()
-def populate_mailing_list_data():
-    from . import populate_mailing_list_data
+def update_smoove_contacts():
+    from . import update_smoove_contacts
     with processing_record() as log:
-        populate_mailing_list_data.main(log)
+        update_smoove_contacts.main(log)
+    print("OK")
+
+
+@main.command()
+@click.argument('POSITION_ID')
+@click.argument('CANDIDATE_ID')
+@click.option('--headless', is_flag=True)
+def download_position_candidate_cv(**kwargs):
+    from . import download_position_candidate_cv
+    with processing_record() as log:
+        download_position_candidate_cv.main(log, **kwargs)
+    print("OK")
+
+
+@main.command()
+@click.argument('POSITION_CANDIDATE_IDS_JSON')
+@click.option('--headless', is_flag=True)
+def download_position_candidate_cv_multi(**kwargs):
+    kwargs['position_candidate_ids'] = json.loads(kwargs.pop('position_candidate_ids_json'))
+    from . import download_position_candidate_cv
+    with processing_record() as log:
+        download_position_candidate_cv.main_multi(log, **kwargs)
     print("OK")
