@@ -1,3 +1,4 @@
+import json
 import click
 from .processing_record import processing_record
 
@@ -57,14 +58,6 @@ def load_data(**kwargs):
     with processing_record() as log:
         for table_name in load_data.main(log, **kwargs):
             log(f'Loaded {table_name}')
-    print("OK")
-
-
-@main.command()
-def update_smoove_contacts():
-    from . import update_smoove_contacts
-    with processing_record() as log:
-        update_smoove_contacts.main(log)
     print("OK")
 
 
