@@ -81,3 +81,13 @@ def download_position_candidate_cv_multi(**kwargs):
     with processing_record() as log:
         download_position_candidate_cv.main_multi(log, **kwargs)
     print("OK")
+
+
+@main.command()
+@click.argument('MAILING_TYPE')
+@click.option('--dry-run', is_flag=True)
+def send_candidate_offers_mailing(**kwargs):
+    from . import send_candidate_offers_mailing
+    with processing_record() as log:
+        send_candidate_offers_mailing.main(log, **kwargs)
+    print("OK")
