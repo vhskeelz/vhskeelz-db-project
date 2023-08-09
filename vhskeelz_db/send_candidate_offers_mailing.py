@@ -1,7 +1,10 @@
 import os
+import datetime
 from textwrap import dedent
 
 import dataflows as df
+from sendgrid import SendGridAPIClient
+from sendgrid.helpers.mail import Mail, Asm
 
 from .db import get_db_engine
 from . import config
@@ -16,13 +19,17 @@ def get_dry_run_save_path(mailing_type):
     return os.path.join(config.DATA_DIR, dirname, 'dry_run')
 
 
-def run_migrations(log, mailing_type):
-    log(f'Running migrations for {mailing_type}...')
-    table_name = {
+def get_db_status_table_name(mailing_type):
+    return {
         'num_fits': 'candidate_offers_num_fits_mailing_status',
         'interested': 'candidate_offers_interested_mailing_status',
         'new_matches': 'candidate_offers_new_matches_mailing_status',
     }[mailing_type]
+
+
+def run_migrations(log, mailing_type):
+    log(f'Running migrations for {mailing_type}...')
+    table_name = get_db_status_table_name(mailing_type)
     with get_db_engine().connect() as conn:
         with conn.begin():
             conn.execute(dedent(f'''
@@ -36,10 +43,10 @@ def run_migrations(log, mailing_type):
     log('Migrations done.')
 
 
-def dry_run_save_rows(log, grouped_rows, mailing_type):
+def dry_run_save_rows(log, mailing_type, grouped_rows, mail_data):
     save_path = get_dry_run_save_path(mailing_type)
 
-    def iterator():
+    def grouped_rows_iterator():
         for key, rows in grouped_rows.items():
             for row in rows:
                 yield {
@@ -47,8 +54,17 @@ def dry_run_save_rows(log, grouped_rows, mailing_type):
                     **row
                 }
 
+    def mail_data_iterator():
+        for row in mail_data:
+            dynamic_template_data = row.pop('dynamic_template_data')
+            yield {
+                **row,
+                **dynamic_template_data,
+            }
+
     df.Flow(
-        iterator(),
+        grouped_rows_iterator(),
+        mail_data_iterator(),
         df.dump_to_path(save_path),
     ).process()
     log(f"Saved to {save_path}")
@@ -63,31 +79,34 @@ def get_fit_desc_sql_interested_fit_percentage_cases(mailing_config):
 
 def get_fit_desc_sql(mailing_type):
     mailing_config = config.CANDIDATE_OFFERS_MAILING_CONFIG[mailing_type]
-    return {
-        'num_fits': dedent(f'''
+    if mailing_type == 'num_fits':
+        return dedent(f'''
             case
                 when cast(l."fitPercentage" as float) < {mailing_config["high_min_fit_percentage"]} then 'medium'
                 else 'high'
             end
-        '''),
-        'interested': dedent(f'''
+        ''')
+    elif mailing_type == 'interested':
+        return dedent(f'''
             case
                 {get_fit_desc_sql_interested_fit_percentage_cases(mailing_config)}
                 else '{mailing_config["fit_labels"]["other"]}'
             end
-        '''),
-        'new_matches': dedent(f'''
+        ''')
+    elif mailing_type == 'new_matches':
+        return dedent(f'''
             case
                 {get_fit_desc_sql_interested_fit_percentage_cases(mailing_config)}
             end
         ''')
-    }[mailing_type]
+    else:
+        raise NotImplementedError()
 
 
 def get_where_sql(mailing_type):
     mailing_config = config.CANDIDATE_OFFERS_MAILING_CONFIG[mailing_type]
-    return {
-        'num_fits': dedent(f'''
+    if mailing_type == 'num_fits':
+        return dedent(f'''
             l."fitPercentage" != 'null'
             and cast(l."fitPercentage" as float) >= {mailing_config["medium_min_fit_percentage"]}
             and cast(l."fitPercentage" as float) <= 1
@@ -96,16 +115,18 @@ def get_where_sql(mailing_type):
                 from candidate_offers_num_fits_mailing_status
                 where status = 'sent'
             )
-        '''),
-        'interested': dedent('''
+        ''')
+    elif mailing_type == 'interested':
+        return dedent('''
             l."Interested" = 'Yes'
             and l.candidate_id || '_' || l."positionOfferId" not in (
                 select candidate_id || '_' || "positionOfferId" 
                 from candidate_offers_interested_mailing_status
                 where status = 'sent'
             )
-        '''),
-        'new_matches': dedent(f'''
+        ''')
+    elif mailing_type == 'new_matches':
+        return dedent(f'''
             l."fitPercentage" != 'null'
             and cast(l."fitPercentage" as float) >= {mailing_config["min_fit_percentage"]}
             and cast(l."fitPercentage" as float) <= 1
@@ -115,7 +136,8 @@ def get_where_sql(mailing_type):
                 where status = 'sent'
             )
         ''')
-    }[mailing_config['type']]
+    else:
+        raise NotImplementedError()
 
 
 def get_group_key(row, mailing_type):
@@ -126,7 +148,115 @@ def get_group_key(row, mailing_type):
     }[mailing_type]
 
 
-def main(log, mailing_type, dry_run=False):
+def get_mail_data(grouped_rows, mailing_type):
+    data = []
+    from_email = config.CANDIDATE_OFFERS_MAILING_CONFIG[mailing_type]['from_email']
+    template_id = config.CANDIDATE_OFFERS_MAILING_CONFIG[mailing_type]['template_id']
+    if mailing_type == 'num_fits':
+        for rows in grouped_rows.values():
+            first_row = rows[0]
+            data.append({
+                "from_email": from_email,
+                "to_emails": first_row['company_email'],
+                "template_id": template_id,
+                "dynamic_template_data": {
+                    "company_name": first_row['company_name'],
+                    "position_name": first_row['position_name'],
+                    "city": first_row['city'] if first_row['city'] != 'null' else '-',
+                    "details_url": config.POSITION_DETAILS_URL_TEMPLATE.format(position_id=first_row['position_id']),
+                    "num_high_fits": sum([1 for row in rows if row['fit_desc'] == 'high']),
+                    "num_medium_fits": sum([1 for row in rows if row['fit_desc'] == 'medium']),
+                },
+                'candidate_position_ids': [[row['candidate_id'], row['position_id']] for row in rows]
+            })
+    elif mailing_type == 'interested':
+        for rows in grouped_rows.values():
+            for row in rows:
+                data.append({
+                    "from_email": from_email,
+                    "to_emails": row['company_email'],
+                    "template_id": template_id,
+                    "dynamic_template_data": {
+                        "company_name": row['company_name'],
+                        "position_name": row['position_name'],
+                        "fit_desc": row['fit_desc'],
+                        "city": row['city'] if row['city'] != 'null' else '-',
+                        "details_url": config.CANDIDATE_POSITION_CV_URL_TEMPLATE.format(position_id=row['position_id'], candidate_id=row['candidate_id']),
+                        "candidate_name": row['candidate_name'],
+                    },
+                    'candidate_position_ids': [[row['candidate_id'], row['position_id']]]
+                })
+    elif mailing_type == 'new_matches':
+        for rows in grouped_rows.values():
+            first_row = rows[0]
+            fits = [
+                {
+                    "date": row['creation_date'].strftime('%d/%m/%Y'),
+                    "name": row['position_name'],
+                    "fit": row['fit_desc']
+                }
+                for row in rows
+            ]
+            data.append({
+                "from_email": from_email,
+                "to_emails": first_row['candidate_email'],
+                "template_id": template_id,
+                "dynamic_template_data": {
+                    "num_fits": len(fits),
+                    "fits": fits
+                },
+                'candidate_position_ids': [[row['candidate_id'], row['position_id']] for row in rows]
+            })
+    else:
+        raise NotImplementedError()
+    return data
+
+
+def get_dynamic_template_data(mailing_type, row):
+    dynamic_template_data = row['dynamic_template_data']
+    if 'city' in dynamic_template_data and dynamic_template_data['city'] == '-':
+        dynamic_template_data['city'] = ''
+    return dynamic_template_data
+
+
+def send_mails(log, mailing_type, mail_data, allow_send, test_email_to, test_email_limit, test_email_update_db):
+    log(f'Sending {len(mail_data)} mails for {mailing_type} (allow_send={allow_send}, test_email_to={test_email_to}, test_email_limit={test_email_limit}, test_email_update_db={test_email_update_db})')
+    if allow_send:
+        assert not test_email_to and not test_email_limit and not test_email_update_db
+    else:
+        assert test_email_to is not None
+    for i, row in enumerate(mail_data):
+        if not allow_send and test_email_limit is not None and i >= test_email_limit:
+            log(f'Breaking after {test_email_limit} test mails')
+            break
+        from_email = row['from_email']
+        to_emails = row['to_emails'] if allow_send else test_email_to
+        template_id = row['template_id']
+        dynamic_template_data = get_dynamic_template_data(mailing_type, row)
+        log(f'Sending mail from {from_email} to {to_emails} with template_id {template_id} and dynamic_template_data {dynamic_template_data}')
+        message = Mail(from_email=from_email, to_emails=to_emails)
+        message.dynamic_template_data = dynamic_template_data
+        message.template_id = template_id
+        message.asm = Asm(int(config.SENDGRID_UNSUSCRIBE_GROUP_ID))
+        sendgrid_client = SendGridAPIClient(config.SENDGRID_API_KEY)
+        sendgrid_client.send(message)
+        if allow_send or test_email_update_db:
+            log(f'Updating {len(row["candidate_position_ids"])} db statuses to sent')
+            db_insert_statuses(mailing_type, row['candidate_position_ids'], 'sent')
+
+
+def db_insert_statuses(mailing_type, candidate_position_ids, status):
+    table_name = get_db_status_table_name(mailing_type)
+    with get_db_engine().connect() as conn:
+        with conn.begin():
+            for candidate_id, position_id in candidate_position_ids:
+                conn.execute(f'''
+                    insert into {table_name} (candidate_id, "positionOfferId", status)
+                    values ('{candidate_id}', '{position_id}', '{status}')
+                ''')
+
+
+def main(log, mailing_type, dry_run=False, allow_send=False, test_email_to=None, test_email_limit=None, test_email_update_db=False):
     run_migrations(log, mailing_type)
     with get_db_engine().connect() as conn:
         with conn.begin():
@@ -149,7 +279,7 @@ def main(log, mailing_type, dry_run=False):
                     'details_url': row.details_url,
                     'fit_desc': row.fit_desc,
                     'candidate_email': row.email,
-                    'creation_date': row.date_created
+                    'creation_date': datetime.datetime.strptime(row.date_created, '%b %d, %Y, %I:%M:%S %p')
                 }
                 for row
                 in conn.execute(dedent(f'''
@@ -179,8 +309,9 @@ def main(log, mailing_type, dry_run=False):
         group_key = ';;'.join(get_group_key(row, mailing_type))
         grouped_rows.setdefault(group_key, []).append(row)
     log(f"Grouped to {len(grouped_rows)} groups")
+    mail_data = get_mail_data(grouped_rows, mailing_type)
     if dry_run:
         log("Dry run, not sending emails")
-        dry_run_save_rows(log, grouped_rows, mailing_type)
+        dry_run_save_rows(log, mailing_type, grouped_rows, mail_data)
     else:
-        raise NotImplementedError("TODO: implement sending emails")
+        send_mails(log, mailing_type, mail_data, allow_send, test_email_to, test_email_limit, test_email_update_db)

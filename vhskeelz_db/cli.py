@@ -86,6 +86,10 @@ def download_position_candidate_cv_multi(**kwargs):
 @main.command()
 @click.argument('MAILING_TYPE')
 @click.option('--dry-run', is_flag=True)
+@click.option('--allow-send', is_flag=True)
+@click.option('--test-email-to')
+@click.option('--test-email-limit', type=int)
+@click.option('--test-email-update-db', is_flag=True)
 def send_candidate_offers_mailing(**kwargs):
     from . import send_candidate_offers_mailing
     with processing_record() as log:
