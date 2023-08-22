@@ -53,7 +53,7 @@ jobs:
             $CMD
           fi
       - name: upload artifacts
-        uses: actions/upload-artifact@v2
+        uses: actions/upload-artifact@v3
         with:
           name: ${{ matrix.mailing_type }}
-          path: .data
+          path: .data/**/*.csv
