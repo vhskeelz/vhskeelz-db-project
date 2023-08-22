@@ -14,6 +14,9 @@
                   <Item>
                     <option name="path" value=".github/workflows/db_update.yaml" />
                   </Item>
+                  <Item>
+                    <option name="path" value=".github/workflows/send-candidate-offers-mailings.yaml" />
+                  </Item>
                 </list>
               </option>
             </SchemaInfo>

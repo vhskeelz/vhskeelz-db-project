@@ -1,9 +1,13 @@
 on:
-  push:
-    branches:
-      - main
+  workflow_dispatch:
 jobs:
-  test:
+  send_candidate_offers_mailings:
+    strategy:
+      matrix:
+        mailing_type:
+          - num_fits
+          - interested
+          - new_matches
     runs-on: ubuntu-22.04
     steps:
       - uses: actions/checkout@v3
@@ -14,7 +18,9 @@ jobs:
           cache: 'poetry'
       - env:
           SERVICE_ACCOUNT_B64: ${{ secrets.SERVICE_ACCOUNT_B64 }}
-          PROCESSING_RECORD_ENABLED: "false"
+          PROCESSING_RECORD_ENABLED: "true"
+          PROCESSING_RECORD_NAME: github_db_update
+          PROCESSING_RECORD_ID: ${{ github.run_id }}
         run: |
           sudo apt-get update &&\
           sudo apt-get install -y xvfb &&\
@@ -29,4 +35,8 @@ jobs:
           bin/env_secret_restore.sh &&\
           export SERVICE_ACCOUNT_FILE=service_account.json &&\
           poetry install &&\
-          xvfb-run poetry run vhskeelz-db download-position-candidate-cv 11ee1f01-6be0-6340-87de-a52302be9a9e 11ee26ce-7b6a-f670-8740-4308c6632414 --save-to-gcs --force
+          xvfb-run poetry run vhskeelz-db send-candidate-offers-mailing ${{ matrix.mailing_type }} --dry-run
+      - uses: actions/upload-artifact@v2
+        with:
+          name: ${{ matrix.mailing_type }}
+          path: .data
