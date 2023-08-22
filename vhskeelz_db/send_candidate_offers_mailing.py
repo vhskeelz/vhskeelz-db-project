@@ -256,7 +256,7 @@ def send_mails(log, mailing_type, mail_data, allow_send, test_email_to, test_ema
         message = Mail(from_email=from_email, to_emails=to_emails)
         message.dynamic_template_data = dynamic_template_data
         message.template_id = template_id
-        if row['pdf_attachment_filename'] and row['pdf_attachment_name']:
+        if row.get('pdf_attachment_filename') and row.get('pdf_attachment_name'):
             with open(row['pdf_attachment_filename'], 'rb') as f:
                 data = f.read()
                 f.close()
