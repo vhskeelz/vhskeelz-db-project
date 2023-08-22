@@ -1,5 +1,26 @@
 on:
   workflow_dispatch:
+    inputs:
+      run_args:
+        description: 'Arguments to pass to the run command'
+        required: false
+        default: ''
+      no_dry_run:
+        description: 'Write "DANGER" to disable dry-run (This is dangerous!)'
+        required: false
+        default: ''
+      with_num_fits:
+        description: 'Send num_fits mailing'
+        type: boolean
+        default: true
+      with_interested:
+        description: 'Send interested mailing'
+        type: boolean
+        default: true
+      with_new_matches:
+        description: 'Send new_matches mailing'
+        type: boolean
+        default: true
 jobs:
   send_candidate_offers_mailings:
     strategy:
@@ -10,17 +31,29 @@ jobs:
           - new_matches
     runs-on: ubuntu-22.04
     steps:
+      - name: determine whether to run further steps in this job
+        if: ${{ matrix.mailing_type == 'num_fits' }} && ${{ inputs.with_num_fits }} == 'true'
+        run: echo "RUN_FURTHER_STEPS=true" >> $GITHUB_ENV
+      - name: determine whether to run further steps in this job
+        if: ${{ matrix.mailing_type == 'interested' }} && ${{ inputs.with_interested }} == 'true'
+        run: echo "RUN_FURTHER_STEPS=true" >> $GITHUB_ENV
+      - name: determine whether to run further steps in this job
+        if: ${{ matrix.mailing_type == 'new_matches' }} && ${{ inputs.with_new_matches }} == 'true'
+        run: echo "RUN_FURTHER_STEPS=true" >> $GITHUB_ENV
       - name: checkout
+        if: env.RUN_FURTHER_STEPS == 'true'
         uses: actions/checkout@v3
       - name: install poetry
+        if: env.RUN_FURTHER_STEPS == 'true'
         run: pipx install poetry
       - name: setup python
+        if: env.RUN_FURTHER_STEPS == 'true'
         uses: actions/setup-python@v4
         with:
           python-version: '3.10'
           cache: 'poetry'
       - name: install xvfb and chromedriver
-        if: ${{ matrix.mailing_type == 'interested' }}
+        if: env.RUN_FURTHER_STEPS == 'true' && ${{ matrix.mailing_type == 'interested' }}
         run: |
           sudo apt-get update &&\
           sudo apt-get install -y xvfb &&\
@@ -31,6 +64,7 @@ jobs:
           sudo chown root:root /usr/local/bin/chromedriver &&\
           sudo chmod +x /usr/local/bin/chromedriver
       - name: login to google and get secrets
+        if: env.RUN_FURTHER_STEPS == 'true'
         env:
           SERVICE_ACCOUNT_B64: ${{ secrets.SERVICE_ACCOUNT_B64 }}
         run: |
@@ -38,21 +72,28 @@ jobs:
           gcloud auth activate-service-account --key-file=service_account.json &&\
           bin/env_secret_restore.sh
       - name: install python module and dependencies
+        if: env.RUN_FURTHER_STEPS == 'true'
         run: poetry install
       - name: run
+        if: env.RUN_FURTHER_STEPS == 'true'
         env:
           PROCESSING_RECORD_ENABLED: "true"
           PROCESSING_RECORD_NAME: send-candidate-offers-mailing-${{ matrix.mailing_type }}
           PROCESSING_RECORD_ID: ${{ github.run_id }}
           SERVICE_ACCOUNT_FILE: service_account.json
         run: |
-          CMD="poetry run vhskeelz-db send-candidate-offers-mailing ${{ matrix.mailing_type }} --dry-run"
+          CMD="poetry run vhskeelz-db send-candidate-offers-mailing ${{ matrix.mailing_type }}"
+          if [ "${{ inputs.no_dry_run }}" != "DANGER" ]; then
+            CMD="$CMD --dry-run"
+          fi
+          CMD="$CMD ${{ inputs.run_args }}"
           if [ "${{ matrix.mailing_type }}" == "interested" ]; then
             xvfb-run $CMD
           else
             $CMD
           fi
       - name: upload artifacts
+        if: env.RUN_FURTHER_STEPS == 'true'
         uses: actions/upload-artifact@v3
         with:
           name: ${{ matrix.mailing_type }}
