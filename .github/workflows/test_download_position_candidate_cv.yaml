@@ -16,9 +16,17 @@ jobs:
           SERVICE_ACCOUNT_B64: ${{ secrets.SERVICE_ACCOUNT_B64 }}
           PROCESSING_RECORD_ENABLED: "false"
         run: |
+          sudo apt-get update &&\
+          sudo apt-get install -y xvfb &&\
+          CHROME_DRIVER_VERSION=`curl -sS chromedriver.storage.googleapis.com/LATEST_RELEASE` &&\
+          wget https://chromedriver.storage.googleapis.com/$CHROME_DRIVER_VERSION/chromedriver_linux64.zip &&\
+          unzip chromedriver_linux64.zip &&\
+          sudo mv chromedriver /usr/local/bin/ &&\
+          sudo chown root:root /usr/local/bin/chromedriver &&\
+          sudo chmod +x /usr/local/bin/chromedriver &&\
           echo "${SERVICE_ACCOUNT_B64}" | base64 -d > service_account.json &&\
           gcloud auth activate-service-account --key-file=service_account.json &&\
           bin/env_secret_restore.sh &&\
           export SERVICE_ACCOUNT_FILE=service_account.json &&\
           poetry install &&\
-          poetry run vhskeelz-db download-position-candidate-cv 11ee1f01-6be0-6340-87de-a52302be9a9e 11ee26ce-7b6a-f670-8740-4308c6632414 --save-to-gcs --force
+          xvfb-run poetry run vhskeelz-db download-position-candidate-cv 11ee1f01-6be0-6340-87de-a52302be9a9e 11ee26ce-7b6a-f670-8740-4308c6632414 --save-to-gcs --force
