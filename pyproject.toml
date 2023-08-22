@@ -24,6 +24,7 @@ dataflows = "^0.3.23"
 psycopg2-binary = "^2.9.6"
 backoff = "^2.2.1"
 sendgrid = "^6.10.0"
+google-cloud-storage = "^2.10.0"
 
 [build-system]
 requires = ["poetry-core"]

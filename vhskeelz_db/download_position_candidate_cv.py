@@ -6,6 +6,7 @@ import traceback
 from contextlib import contextmanager
 
 
+import google.cloud.storage
 from selenium import webdriver
 from selenium.webdriver.common.by import By
 from selenium.webdriver.support.ui import WebDriverWait
@@ -93,7 +94,33 @@ def login(log, driver):
     log("Login OK")
 
 
-def download(log, driver, download_path, position_id, candidate_id):
+def upload_to_gcs(source_file_name, destination_blob_name):
+    storage_client = google.cloud.storage.Client.from_service_account_json(config.SERVICE_ACCOUNT_FILE)
+    bucket = storage_client.bucket(config.GCS_BUCKET_NAME)
+    blob = bucket.blob(destination_blob_name)
+    with open(source_file_name, "rb") as f:
+        blob.upload_from_file(f)
+
+
+def check_gcs_blob_exists(destination_blob_name):
+    storage_client = google.cloud.storage.Client.from_service_account_json(config.SERVICE_ACCOUNT_FILE)
+    bucket = storage_client.bucket(config.GCS_BUCKET_NAME)
+    blob = bucket.blob(destination_blob_name)
+    return blob.exists()
+
+
+def download_from_gcs(source_blob_name, destination_file_name):
+    storage_client = google.cloud.storage.Client.from_service_account_json(config.SERVICE_ACCOUNT_FILE)
+    bucket = storage_client.bucket(config.GCS_BUCKET_NAME)
+    blob = bucket.blob(source_blob_name)
+    if blob.exists():
+        blob.download_to_filename(destination_file_name)
+        return True
+    else:
+        return False
+
+
+def download(log, driver, download_path, position_id, candidate_id, save_to_gcs=False):
     WebDriverWait(driver, 10).until(EC.presence_of_element_located((By.XPATH, "//p[contains(., 'ייצוא פרטים')]"))).click()
     WebDriverWait(driver, 20).until(lambda _: any(filename.endswith('.pdf') for filename in os.listdir(download_path)))
     filenames = [filename for filename in os.listdir(download_path) if filename.endswith('.pdf')]
@@ -104,29 +131,44 @@ def download(log, driver, download_path, position_id, candidate_id):
     target_filename = os.path.join(DOWNLOAD_DIRECTORY, f'{position_id}_{candidate_id}.pdf')
     os.rename(os.path.join(download_path, filename), target_filename)
     log(f'CV downloaded to {target_filename}')
+    if save_to_gcs:
+        upload_to_gcs(target_filename, f'cv/{position_id}_{candidate_id}.pdf')
+        log(f'CV uploaded to GCS: cv/{position_id}_{candidate_id}.pdf')
     return filename
 
 
-def main_multi(log, position_candidate_ids, headless=False, proxy_server=None, set_trace=False):
+def main_multi(log, position_candidate_ids, headless=False, proxy_server=None, set_trace=False, save_to_gcs=False, force=False, skip_download_errors=False):
     with tempfile.TemporaryDirectory() as download_path:
         with driver_contextmanager(download_path, headless, proxy_server, set_trace) as driver:
             is_loggedin = False
             for position_id, candidate_id in position_candidate_ids:
+                if not force and check_gcs_blob_exists(f'cv/{position_id}_{candidate_id}.pdf'):
+                    log(f'CV already exists in GCS: cv/{position_id}_{candidate_id}.pdf')
+                else:
+                    url = config.CANDIDATE_POSITION_CV_URL_TEMPLATE.format(position_id=position_id, candidate_id=candidate_id)
+                    log(f"Downloading CV from URL {url}")
+                    driver.get(url)
+                    if not is_loggedin:
+                        login(log, driver)
+                        is_loggedin = True
+                    try:
+                        download(log, driver, download_path, position_id, candidate_id, save_to_gcs)
+                    except:
+                        if skip_download_errors:
+                            log(f"{traceback.format_exc()}\nError downloading position_id: {position_id} candidate_id: {candidate_id}")
+                        else:
+                            raise
+
+
+def main(log, position_id, candidate_id, headless=False, proxy_server=None, set_trace=False, save_to_gcs=False, force=False):
+    if not force and check_gcs_blob_exists(f'cv/{position_id}_{candidate_id}.pdf'):
+        log(f'CV already exists in GCS: cv/{position_id}_{candidate_id}.pdf')
+    else:
+        with tempfile.TemporaryDirectory() as download_path:
+            log(f"downloading position_id: {position_id} candidate_id: {candidate_id}")
+            with driver_contextmanager(download_path, headless, proxy_server, set_trace) as driver:
                 url = config.CANDIDATE_POSITION_CV_URL_TEMPLATE.format(position_id=position_id, candidate_id=candidate_id)
                 log(f"Downloading CV from URL {url}")
                 driver.get(url)
-                if not is_loggedin:
-                    login(log, driver)
-                    is_loggedin = True
-                download(log, driver, download_path, position_id, candidate_id)
-
-
-def main(log, position_id, candidate_id, headless=False, proxy_server=None, set_trace=False):
-    with tempfile.TemporaryDirectory() as download_path:
-        log(f"downloading position_id: {position_id} candidate_id: {candidate_id}")
-        with driver_contextmanager(download_path, headless, proxy_server, set_trace) as driver:
-            url = config.CANDIDATE_POSITION_CV_URL_TEMPLATE.format(position_id=position_id, candidate_id=candidate_id)
-            log(f"Downloading CV from URL {url}")
-            driver.get(url)
-            login(log, driver)
-            download(log, driver, download_path, position_id, candidate_id)
+                login(log, driver)
+                download(log, driver, download_path, position_id, candidate_id, save_to_gcs)

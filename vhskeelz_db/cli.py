@@ -65,6 +65,8 @@ def load_data(**kwargs):
 @click.argument('POSITION_ID')
 @click.argument('CANDIDATE_ID')
 @click.option('--headless', is_flag=True)
+@click.option('--save-to-gcs', is_flag=True)
+@click.option('--force', is_flag=True)
 def download_position_candidate_cv(**kwargs):
     from . import download_position_candidate_cv
     with processing_record() as log:
@@ -73,8 +75,10 @@ def download_position_candidate_cv(**kwargs):
 
 
 @main.command()
-@click.argument('POSITION_CANDIDATE_IDS_JSON')
+@click.argument('POSITION_CANDIDATE_IDS_JSON', required=False)
 @click.option('--headless', is_flag=True)
+@click.option('--save-to-gcs', is_flag=True)
+@click.option('--force', is_flag=True)
 def download_position_candidate_cv_multi(**kwargs):
     kwargs['position_candidate_ids'] = json.loads(kwargs.pop('position_candidate_ids_json'))
     from . import download_position_candidate_cv
@@ -90,7 +94,10 @@ def download_position_candidate_cv_multi(**kwargs):
 @click.option('--test-email-to')
 @click.option('--test-email-limit', type=int)
 @click.option('--test-email-update-db', is_flag=True)
+@click.option('--only-candidate-position-ids')
 def send_candidate_offers_mailing(**kwargs):
+    only_candidate_position_ids = kwargs.pop('only_candidate_position_ids')
+    kwargs['only_candidate_position_ids'] = json.loads(only_candidate_position_ids) if only_candidate_position_ids else None
     from . import send_candidate_offers_mailing
     with processing_record() as log:
         send_candidate_offers_mailing.main(log, **kwargs)

@@ -1,13 +1,14 @@
 import os
+import base64
 import datetime
 from textwrap import dedent
 
 import dataflows as df
 from sendgrid import SendGridAPIClient
-from sendgrid.helpers.mail import Mail, Asm
+from sendgrid.helpers.mail import Mail, Asm, Attachment, FileContent, FileName, FileType, Disposition
 
 from .db import get_db_engine
-from . import config
+from . import config, download_position_candidate_cv
 
 
 def get_dry_run_save_path(mailing_type):
@@ -148,7 +149,12 @@ def get_group_key(row, mailing_type):
     }[mailing_type]
 
 
-def get_mail_data(grouped_rows, mailing_type):
+def download_cvs(position_candidate_ids, log):
+    log(f'Downloading CVs for {len(position_candidate_ids)} candidate positions')
+    download_position_candidate_cv.main_multi(log, position_candidate_ids, save_to_gcs=True)
+
+
+def get_mail_data(grouped_rows, mailing_type, log):
     data = []
     from_email = config.CANDIDATE_OFFERS_MAILING_CONFIG[mailing_type]['from_email']
     template_id = config.CANDIDATE_OFFERS_MAILING_CONFIG[mailing_type]['template_id']
@@ -170,12 +176,25 @@ def get_mail_data(grouped_rows, mailing_type):
                 'candidate_position_ids': [[row['candidate_id'], row['position_id']] for row in rows]
             })
     elif mailing_type == 'interested':
+        os.makedirs(os.path.join(config.DATA_DIR, 'candidate_offers_interested_mailing', 'cv'), exist_ok=True)
+        position_candidate_ids = set()
         for rows in grouped_rows.values():
             for row in rows:
+                position_candidate_ids.add((row['position_id'], row['candidate_id']))
+        if position_candidate_ids:
+            download_cvs(position_candidate_ids, log)
+        for rows in grouped_rows.values():
+            for row in rows:
+                cv_filename = os.path.join(config.DATA_DIR, 'candidate_offers_interested_mailing', 'cv', f'{row["position_id"]}_{row["candidate_id"]}.pdf')
+                if not download_position_candidate_cv.download_from_gcs(f'cv/{row["position_id"]}_{row["candidate_id"]}.pdf', cv_filename):
+                    cv_filename = None
+                position_candidate_ids.add((row['position_id'], row['candidate_id']))
                 data.append({
                     "from_email": from_email,
                     "to_emails": row['company_email'],
                     "template_id": template_id,
+                    "pdf_attachment_filename": cv_filename,
+                    'pdf_attachment_name': f"{row['candidate_name']} - {row['position_name']}.pdf",
                     "dynamic_template_data": {
                         "company_name": row['company_name'],
                         "position_name": row['position_name'],
@@ -237,6 +256,17 @@ def send_mails(log, mailing_type, mail_data, allow_send, test_email_to, test_ema
         message = Mail(from_email=from_email, to_emails=to_emails)
         message.dynamic_template_data = dynamic_template_data
         message.template_id = template_id
+        if row['pdf_attachment_filename'] and row['pdf_attachment_name']:
+            with open(row['pdf_attachment_filename'], 'rb') as f:
+                data = f.read()
+                f.close()
+            encoded_file = base64.b64encode(data).decode()
+            message.attachment = Attachment(
+                FileContent(encoded_file),
+                FileName(row['pdf_attachment_name']),
+                FileType('application/pdf'),
+                Disposition('attachment')
+            )
         message.asm = Asm(int(config.SENDGRID_UNSUSCRIBE_GROUP_ID))
         sendgrid_client = SendGridAPIClient(config.SENDGRID_API_KEY)
         sendgrid_client.send(message)
@@ -256,7 +286,8 @@ def db_insert_statuses(mailing_type, candidate_position_ids, status):
                 ''')
 
 
-def main(log, mailing_type, dry_run=False, allow_send=False, test_email_to=None, test_email_limit=None, test_email_update_db=False):
+def main(log, mailing_type, dry_run=False, allow_send=False, test_email_to=None, test_email_limit=None, test_email_update_db=False,
+         only_candidate_position_ids=None):
     run_migrations(log, mailing_type)
     with get_db_engine().connect() as conn:
         with conn.begin():
@@ -303,13 +334,15 @@ def main(log, mailing_type, dry_run=False, allow_send=False, test_email_to=None,
                         l."fitPercentage", p.city, l.email, p."dateCreated"
                 '''))
             ]
+    if only_candidate_position_ids:
+        rows = [row for row in rows if [row['candidate_id'], row['position_id']] in only_candidate_position_ids]
     log(f"Fetched {len(rows)} candidate positions")
     grouped_rows = {}
     for row in rows:
         group_key = ';;'.join(get_group_key(row, mailing_type))
         grouped_rows.setdefault(group_key, []).append(row)
     log(f"Grouped to {len(grouped_rows)} groups")
-    mail_data = get_mail_data(grouped_rows, mailing_type)
+    mail_data = get_mail_data(grouped_rows, mailing_type, log)
     if dry_run:
         log("Dry run, not sending emails")
         dry_run_save_rows(log, mailing_type, grouped_rows, mail_data)
