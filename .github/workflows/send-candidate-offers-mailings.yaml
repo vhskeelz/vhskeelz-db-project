@@ -32,14 +32,18 @@ jobs:
     runs-on: ubuntu-22.04
     steps:
       - name: determine whether to run further steps in this job
-        if: ${{ matrix.mailing_type == 'num_fits' }} && ${{ inputs.with_num_fits }} == 'true'
-        run: echo "RUN_FURTHER_STEPS=true" >> $GITHUB_ENV
-      - name: determine whether to run further steps in this job
-        if: ${{ matrix.mailing_type == 'interested' }} && ${{ inputs.with_interested }} == 'true'
-        run: echo "RUN_FURTHER_STEPS=true" >> $GITHUB_ENV
-      - name: determine whether to run further steps in this job
-        if: ${{ matrix.mailing_type == 'new_matches' }} && ${{ inputs.with_new_matches }} == 'true'
-        run: echo "RUN_FURTHER_STEPS=true" >> $GITHUB_ENV
+        run: |
+          if (
+            ([ "${{ matrix.mailing_type }}" == "num_fits" ] && [ "${{ inputs.with_num_fits }}" == "true" ])
+            || ([ "${{ matrix.mailing_type }}" == "interested" ] && [ "${{ inputs.with_interested }}" == "true" ])
+            || ([ "${{ matrix.mailing_type }}" == "new_matches" ] && [ "${{ inputs.with_new_matches }}" == "true" ])
+          ); then
+            echo running further steps
+            echo "RUN_FURTHER_STEPS=true" >> $GITHUB_ENV
+          else
+            echo not running further steps
+            echo "RUN_FURTHER_STEPS=false" >> $GITHUB_ENV
+          fi
       - name: checkout
         if: env.RUN_FURTHER_STEPS == 'true'
         uses: actions/checkout@v3
