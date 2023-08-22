@@ -55,7 +55,7 @@ def iterate_candidates():
             yield process_input_row(dict(row))
 
 
-def main(log, only_emails=None):
+def main(log, only_emails=None, limit=None, debug=False):
     if only_emails:
         only_emails = [e.strip() for e in only_emails.split(',') if e.strip()]
     uuids = {}
@@ -63,34 +63,60 @@ def main(log, only_emails=None):
         smoove_candidate = process_output_row(candidate)
         if only_emails and smoove_candidate['email'] not in only_emails:
             continue
+        if debug:
+            log(smoove_candidate)
         assert smoove_candidate['email'] not in uuids, f'duplicate email {smoove_candidate["email"]}'
         try:
+            # first we only create new contacts, we don't update existing contacts
             res = requests.post(
                 'https://rest.smoove.io/v1/async/contacts?updateIfExists=false&restoreIfDeleted=false&restoreIfUnsubscribed=false&overrideNullableValue=false',
                 json=smoove_candidate,
                 headers={'Authorization': f'Bearer {config.SMOOVE_API_KEY}'}
             )
             assert res.status_code == 202, res.text
-            uuids[smoove_candidate['email']] = res.json()
+            uuids[smoove_candidate['email']] = [res.json()]
+        except:
+            log(f'failed to create: {smoove_candidate}')
+            raise
+        try:
+            # then we update all contacts to add them to the mailing list
+            res = requests.post(
+                'https://rest.smoove.io/v1/async/contacts?updateIfExists=true&restoreIfDeleted=false&restoreIfUnsubscribed=false&overrideNullableValue=false',
+                json={
+                    "email": smoove_candidate['email'],
+                    "lists_ToSubscribe": [STUDIO_LIST_ID]
+                },
+                headers={'Authorization': f'Bearer {config.SMOOVE_API_KEY}'}
+            )
+            assert res.status_code == 202, res.text
+            uuids[smoove_candidate['email']].append(res.json())
         except:
             log(f'failed to update: {smoove_candidate}')
             raise
+        if limit and len(uuids) >= limit:
+            break
     log(f'processed {len(uuids)} candidates, checking status')
+    time.sleep(2)
     start_time = datetime.datetime.now()
     while True:
         num_updated = 0
-        for email, update_res in uuids.items():
-            if update_res is not None:
-                num_updated += 1
-                res = requests.get(
-                    f'https://rest.smoove.io/v1/async/contacts/{update_res["Uuid"]}/{update_res["Timestamp"]}/status',
-                    headers={'Authorization': f'Bearer {config.SMOOVE_API_KEY}'}
-                )
-                assert res.status_code == 200, f'{email} {res.text}'
-                if res.json()['status'] == 'Succeeded':
-                    uuids[email] = None
-        if num_updated == 0:
+        for email, update_results in uuids.items():
+            if debug:
+                log(email)
+            for i, update_res in enumerate(update_results):
+                if update_res is not None:
+                    num_updated += 1
+                    res = requests.get(
+                        f'https://rest.smoove.io/v1/async/contacts/{update_res["Uuid"]}/{update_res["Timestamp"]}/status',
+                        headers={'Authorization': f'Bearer {config.SMOOVE_API_KEY}'}
+                    )
+                    assert res.status_code == 200, f'{email} {res.text}'
+                    if res.json()['status'] == 'Succeeded':
+                        uuids[email][i] = None
+        if any([any(update_results) for email, update_results in uuids.items()]):
+            if datetime.datetime.now() - start_time > datetime.timedelta(hours=1):
+                raise Exception('timeout')
+            log("Waiting for smoove to finish processing...")
+            time.sleep(60)
+        else:
             break
-        if datetime.datetime.now() - start_time > datetime.timedelta(hours=1):
-            raise Exception('timeout')
-        time.sleep(60)

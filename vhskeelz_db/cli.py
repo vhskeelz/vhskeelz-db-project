@@ -99,6 +99,8 @@ def send_candidate_offers_mailing(**kwargs):
 
 @main.command()
 @click.option('--only-emails')
+@click.option('--limit', type=int)
+@click.option('--debug', is_flag=True)
 def update_smoove_candidates_mailing_list(**kwargs):
     from . import update_smoove_candidates_mailing_list
     with processing_record() as log:
