@@ -95,3 +95,12 @@ def send_candidate_offers_mailing(**kwargs):
     with processing_record() as log:
         send_candidate_offers_mailing.main(log, **kwargs)
     print("OK")
+
+
+@main.command()
+@click.option('--only-emails')
+def update_smoove_candidates_mailing_list(**kwargs):
+    from . import update_smoove_candidates_mailing_list
+    with processing_record() as log:
+        update_smoove_candidates_mailing_list.main(log, **kwargs)
+    print("OK")
