@@ -8,4 +8,5 @@ gcloud auth activate-service-account --key-file=service_account.json &&\
 bin/env_secret_restore.sh &&\
 export SERVICE_ACCOUNT_FILE=service_account.json &&\
 poetry install &&\
-poetry run vhskeelz-db ${VHSKEELZ_DB_ARGS}
+poetry run vhskeelz-db ${VHSKEELZ_DB_ARGS} &&\
+poetry run vhskeelz-db update-smoove-candidates-mailing-list
