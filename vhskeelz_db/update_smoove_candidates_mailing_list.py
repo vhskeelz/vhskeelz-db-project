@@ -73,7 +73,7 @@ def main(log, only_emails=None, limit=None, debug=False):
                 json=smoove_candidate,
                 headers={'Authorization': f'Bearer {config.SMOOVE_API_KEY}'}
             )
-            assert res.status_code == 202, res.text
+            assert res.status_code == 202, f'unexpected status_code: {res.status_code} - {res.text}'
             uuids[smoove_candidate['email']] = [res.json()]
         except:
             log(f'failed to create: {smoove_candidate}')
@@ -88,7 +88,7 @@ def main(log, only_emails=None, limit=None, debug=False):
                 },
                 headers={'Authorization': f'Bearer {config.SMOOVE_API_KEY}'}
             )
-            assert res.status_code == 202, res.text
+            assert res.status_code == 202, f'unexpected status_code: {res.status_code} - {res.text}'
             uuids[smoove_candidate['email']].append(res.json())
         except:
             log(f'failed to update: {smoove_candidate}')
@@ -110,7 +110,7 @@ def main(log, only_emails=None, limit=None, debug=False):
                         f'https://rest.smoove.io/v1/async/contacts/{update_res["Uuid"]}/{update_res["Timestamp"]}/status',
                         headers={'Authorization': f'Bearer {config.SMOOVE_API_KEY}'}
                     )
-                    assert res.status_code == 200, f'{email} {res.text}'
+                    assert res.status_code == 200, f'{email} - unexpected status_code: {res.status_code} - {res.text}'
                     if res.json()['status'] == 'Succeeded':
                         uuids[email][i] = None
         if any([any(update_results) for email, update_results in uuids.items()]):
