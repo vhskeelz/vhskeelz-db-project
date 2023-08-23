@@ -25,4 +25,4 @@ jobs:
       - name: run update-smoove-candidates-mailing-list
         env:
           PROCESSING_RECORD_NAME: ${{ github.event_name }}-github_db_update-update-smoove-candidates-mailing-list
-        run: poetry run update-smoove-candidates-mailing-list
+        run: poetry run vhskeelz-db update-smoove-candidates-mailing-list
