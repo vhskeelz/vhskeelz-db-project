@@ -6,6 +6,8 @@ jobs:
   clear_processing_record:
     runs-on: ubuntu-22.04
     steps:
+      - name: checkout
+        uses: actions/checkout@v3
       - name: setup vhskeelz-db
         uses: ./.github/actions/setup-vhskeelz-db
         with:
