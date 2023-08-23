@@ -48,11 +48,12 @@ def process_output_row(row):
 
 def iterate_candidates():
     with get_db_engine().connect() as conn:
-        for row in conn.execute("""
-            select email, "firstName" first_name, "lastName" last_name, "phoneNumber" phone_number, city, "birthDate" birth_date, gender, "idNumber" id_number
-            from vehadarta_db_candidate
-        """):
-            yield process_input_row(dict(row))
+        with conn.begin():
+            for row in conn.execute("""
+                select email, "firstName" first_name, "lastName" last_name, "phoneNumber" phone_number, city, "birthDate" birth_date, gender, "idNumber" id_number
+                from vehadarta_db_candidate
+            """):
+                yield process_input_row(dict(row))
 
 
 def main(log, only_emails=None, limit=None, debug=False):

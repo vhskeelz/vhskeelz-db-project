@@ -57,4 +57,16 @@ def processing_record():
 def clear():
     with get_db_engine().connect() as conn:
         with conn.begin():
-            conn.execute('drop table processing_record_log; drop table processing_record;')
+            conn.execute('drop table processing_record_log;')
+
+
+def get_last_finished_at(process_name):
+    with get_db_engine().connect() as conn:
+        with conn.begin():
+            row = conn.execute(dedent(f'''
+                select * from processing_record
+                where process_name = '{process_name}' and finished_at is not null
+                order by finished_at desc
+                limit 1
+            ''')).first()
+            return dict(row) if row else None

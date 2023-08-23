@@ -41,6 +41,13 @@ def processing_record_clear():
 
 
 @main.command()
+@click.argument('PROCESS_NAME')
+def processing_record_get_last_finished_at(**kwargs):
+    from . import processing_record
+    print(processing_record.get_last_finished_at(**kwargs))
+
+
+@main.command()
 @click.option('--only-table-name')
 def extract_data(**kwargs):
     from . import extract_data
@@ -95,6 +102,7 @@ def download_position_candidate_cv_multi(**kwargs):
 @click.option('--test-email-limit', type=int)
 @click.option('--test-email-update-db', is_flag=True)
 @click.option('--only-candidate-position-ids')
+@click.option('--schedule', is_flag=True)
 def send_candidate_offers_mailing(**kwargs):
     only_candidate_position_ids = kwargs.pop('only_candidate_position_ids')
     kwargs['only_candidate_position_ids'] = json.loads(only_candidate_position_ids) if only_candidate_position_ids else None
