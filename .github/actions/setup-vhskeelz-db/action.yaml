@@ -1,0 +1,43 @@
+name: Setup vhskeelz-db
+description: Setup vhskeelz-db, should run on ubuntu-22.04 runner
+inputs:
+  selenium:
+    description: Support running Selenium scripts
+    default: "false"
+  service_account_b64:
+    description: Base64 encoded service account JSON to login to Google
+    required: true
+runs:
+  using: composite
+  steps:
+    - name: checkout
+      uses: actions/checkout@v3
+    - name: install poetry
+      shell: bash
+      run: pipx install poetry
+    - name: setup python
+      uses: actions/setup-python@v4
+      with:
+        python-version: '3.10'
+        cache: 'poetry'
+    - name: install xvfb and chromedriver
+      if: inputs.selenium == 'true'
+      shell: bash
+      run: |
+        sudo apt-get update &&\
+        sudo apt-get install -y xvfb &&\
+        CHROME_DRIVER_VERSION=`curl -sS chromedriver.storage.googleapis.com/LATEST_RELEASE` &&\
+        wget https://chromedriver.storage.googleapis.com/$CHROME_DRIVER_VERSION/chromedriver_linux64.zip &&\
+        unzip chromedriver_linux64.zip &&\
+        sudo mv chromedriver /usr/local/bin/ &&\
+        sudo chown root:root /usr/local/bin/chromedriver &&\
+        sudo chmod +x /usr/local/bin/chromedriver
+    - name: login to google and get secrets
+      shell: bash
+      run: |
+        echo "${{ inputs.service_account_b64 }}" | base64 -d > service_account.json &&\
+        gcloud auth activate-service-account --key-file=service_account.json &&\
+        bin/env_secret_restore.sh
+    - name: install python module and dependencies
+      shell: bash
+      run: poetry install

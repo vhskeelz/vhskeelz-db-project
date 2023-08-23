@@ -6,13 +6,9 @@ jobs:
   clear_processing_record:
     runs-on: ubuntu-22.04
     steps:
-      - uses: actions/checkout@v3
-      - run: pipx install poetry
-      - uses: actions/setup-python@v4
+      - name: setup vhskeelz-db
+        uses: ./.github/actions/setup-vhskeelz-db
         with:
-          python-version: '3.10'
-          cache: 'poetry'
-      - env:
-          SERVICE_ACCOUNT_B64: ${{ secrets.SERVICE_ACCOUNT_B64 }}
-          VHSKEELZ_DB_ARGS: "processing-record-clear"
-        run: bin/ci_run.sh
+          selenium: "false"
+          service_account_b64: ${{ secrets.SERVICE_ACCOUNT_B64 }}
+      - run: poetry run vhskeelz-db processing-record-clear
