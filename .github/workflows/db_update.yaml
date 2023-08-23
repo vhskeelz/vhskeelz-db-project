@@ -8,6 +8,7 @@ jobs:
     env:
       PROCESSING_RECORD_ENABLED: "true"
       PROCESSING_RECORD_ID: ${{ github.run_id }}
+      SERVICE_ACCOUNT_FILE: service_account.json
     steps:
       - name: checkout
         uses: actions/checkout@v3
