@@ -1,3 +1,4 @@
+name: Send candidate offers mailings
 on:
   schedule:
     - cron: '0 * * * *'

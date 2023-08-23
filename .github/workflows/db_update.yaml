@@ -1,3 +1,4 @@
+name: DB update
 on:
   workflow_dispatch:
   schedule:
