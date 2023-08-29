@@ -43,11 +43,16 @@ def finish(process_name, process_id):
 
 
 @contextmanager
-def processing_record():
+def processing_record(delayed_start=False):
     if config.PROCESSING_RECORD_ENABLED:
-        start(config.PROCESSING_RECORD_NAME, config.PROCESSING_RECORD_ID)
+        if not delayed_start:
+            start(config.PROCESSING_RECORD_NAME, config.PROCESSING_RECORD_ID)
         try:
-            yield partial(log, config.PROCESSING_RECORD_NAME, config.PROCESSING_RECORD_ID)
+            log_partial = partial(log, config.PROCESSING_RECORD_NAME, config.PROCESSING_RECORD_ID)
+            if delayed_start:
+                yield partial(start, config.PROCESSING_RECORD_NAME, config.PROCESSING_RECORD_ID), log_partial
+            else:
+                yield log_partial
         finally:
             finish(config.PROCESSING_RECORD_NAME, config.PROCESSING_RECORD_ID)
     else:

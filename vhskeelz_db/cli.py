@@ -107,8 +107,8 @@ def send_candidate_offers_mailing(**kwargs):
     only_candidate_position_ids = kwargs.pop('only_candidate_position_ids')
     kwargs['only_candidate_position_ids'] = json.loads(only_candidate_position_ids) if only_candidate_position_ids else None
     from . import send_candidate_offers_mailing
-    with processing_record() as log:
-        send_candidate_offers_mailing.main(log, **kwargs)
+    with processing_record(delayed_start=True) as (start_log, log):
+        send_candidate_offers_mailing.main(start_log, log, **kwargs)
     print("OK")
 
 

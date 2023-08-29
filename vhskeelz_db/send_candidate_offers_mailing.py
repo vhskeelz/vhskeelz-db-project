@@ -311,11 +311,12 @@ def check_schedule(mailing_type, log):
     return True
 
 
-def main(log, mailing_type, dry_run=False, allow_send=False, test_email_to=None, test_email_limit=None, test_email_update_db=False,
+def main(start_log, log, mailing_type, dry_run=False, allow_send=False, test_email_to=None, test_email_limit=None, test_email_update_db=False,
          only_candidate_position_ids=None, schedule=False):
     if schedule and not check_schedule(mailing_type, log):
         log(f'Skipping {mailing_type} due to schedule')
         return
+    start_log()
     run_migrations(log, mailing_type)
     with get_db_engine().connect() as conn:
         with conn.begin():
