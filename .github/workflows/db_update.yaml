@@ -5,6 +5,8 @@ on:
     - cron: '00 23 * * *'
 jobs:
   db_update:
+    concurrency:
+      group: vhskeelz-db
     runs-on: ubuntu-22.04
     env:
       PROCESSING_RECORD_ENABLED: "true"

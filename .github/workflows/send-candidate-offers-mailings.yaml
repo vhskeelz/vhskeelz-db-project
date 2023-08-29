@@ -33,7 +33,7 @@ jobs:
           - interested
           - new_matches
     concurrency:
-      group: send-candidate-offers-mailings-${{ matrix.mailing_type }}
+      group: vhskeelz-db
     runs-on: ubuntu-22.04
     steps:
       - name: checkout

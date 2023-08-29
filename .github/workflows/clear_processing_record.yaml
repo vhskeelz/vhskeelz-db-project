@@ -5,6 +5,8 @@ on:
     - cron: '0 0 * * 4'
 jobs:
   clear_processing_record:
+    concurrency:
+      group: vhskeelz-db
     runs-on: ubuntu-22.04
     steps:
       - name: checkout
