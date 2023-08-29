@@ -221,6 +221,7 @@ def get_mail_data(grouped_rows, mailing_type, log):
                 "to_emails": first_row['candidate_email'],
                 "template_id": template_id,
                 "dynamic_template_data": {
+                    "candidate_name": first_row['candidate_name'],
                     "num_fits": len(fits),
                     "fits": fits
                 },

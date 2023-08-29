@@ -55,6 +55,8 @@ def processing_record(delayed_start=False):
                 yield log_partial
         finally:
             finish(config.PROCESSING_RECORD_NAME, config.PROCESSING_RECORD_ID)
+    elif delayed_start:
+        yield lambda: None, print
     else:
         yield print
 
