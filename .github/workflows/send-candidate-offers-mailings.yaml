@@ -55,7 +55,8 @@ jobs:
         run: |
           if [ "${{ github.event_name }}" == "schedule" ]; then
             echo setting schedule env vars
-            echo "RUN_ARGS=--schedule" >> $GITHUB_ENV
+            echo "NO_DRY_RUN=true" >> $GITHUB_ENV
+            echo "RUN_ARGS=--schedule --test-email-to=default --test-email-update-db" >> $GITHUB_ENV
           else
             echo setting env vars from inputs
             echo "NO_DRY_RUN=${{ inputs.no_dry_run }}" >> $GITHUB_ENV

@@ -240,6 +240,8 @@ def get_dynamic_template_data(mailing_type, row):
 
 
 def send_mails(log, mailing_type, mail_data, allow_send, test_email_to, test_email_limit, test_email_update_db):
+    if test_email_to == 'default':
+        test_email_to = config.CANDIDATE_OFFERS_MAILING_CONFIG['default_test_email_to']
     log(f'Sending {len(mail_data)} mails for {mailing_type} (allow_send={allow_send}, test_email_to={test_email_to}, test_email_limit={test_email_limit}, test_email_update_db={test_email_update_db})')
     if allow_send:
         assert not test_email_to and not test_email_limit and not test_email_update_db
@@ -255,6 +257,7 @@ def send_mails(log, mailing_type, mail_data, allow_send, test_email_to, test_ema
         dynamic_template_data = get_dynamic_template_data(mailing_type, row)
         log(f'Sending mail from {from_email} to {to_emails} with template_id {template_id} and dynamic_template_data {dynamic_template_data}')
         message = Mail(from_email=from_email, to_emails=to_emails)
+        message.add_bcc(config.CANDIDATE_OFFERS_MAILING_CONFIG['bcc'])
         message.dynamic_template_data = dynamic_template_data
         message.template_id = template_id
         if row.get('pdf_attachment_filename') and row.get('pdf_attachment_name'):
