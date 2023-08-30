@@ -39,7 +39,7 @@ runs:
         PROCESSING_RECORD_ID: ${{ inputs.processing_record_name }}
         SERVICE_ACCOUNT_FILE: service_account.json
       run: |
-        CMD="poetry run vhskeelz-db send-candidate-offers-mailing ${{ matrix.mailing_type }}"
+        CMD="poetry run vhskeelz-db send-candidate-offers-mailing ${{ inputs.mailing_type }}"
         if [ "${{ inputs.no_dry_run }}" != "DANGER" ]; then
           CMD="$CMD --dry-run"
         fi
