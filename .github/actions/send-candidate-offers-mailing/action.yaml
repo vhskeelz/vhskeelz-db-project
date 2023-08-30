@@ -1,0 +1,56 @@
+name: Send candidate offers mailing
+description: Send candidate offers mailing
+inputs:
+  run_args:
+    description: 'Arguments to pass to the script'
+    default: ''
+  no_dry_run:
+    description: 'Write "DANGER" to disable dry-run (This is dangerous!)'
+    default: ''
+  mailing_type:
+    description: 'Which mailing type to send'
+    default: ''
+    required: true
+  service_account_b64:
+    description: Base64 encoded service account JSON to login to Google
+    required: true
+  processing_record_name:
+    description: "Processing record name"
+    required: true
+  processing_record_id:
+    description: "Processing record ID"
+    required: true
+  artifacts_name:
+    description: "Artifacts name"
+    default: "artifacts"
+runs:
+  using: composite
+  steps:
+    - name: setup vhskeelz-db
+      uses: ./.github/actions/setup-vhskeelz-db
+      with:
+        selenium: "${{ inputs.mailing_type == 'interested' }}"
+        service_account_b64: ${{ inputs.service_account_b64 }}
+    - name: run
+      shell: bash
+      env:
+        PROCESSING_RECORD_ENABLED: "true"
+        PROCESSING_RECORD_NAME: ${{ inputs.processing_record_name }}
+        PROCESSING_RECORD_ID: ${{ inputs.processing_record_name }}
+        SERVICE_ACCOUNT_FILE: service_account.json
+      run: |
+        CMD="poetry run vhskeelz-db send-candidate-offers-mailing ${{ matrix.mailing_type }}"
+        if [ "${{ inputs.no_dry_run }}" != "DANGER" ]; then
+          CMD="$CMD --dry-run"
+        fi
+        CMD="$CMD ${{ inputs.run_args }}"
+        if [ "${{ inputs.mailing_type }}" == "interested" ]; then
+          xvfb-run $CMD
+        else
+          $CMD
+        fi
+    - name: upload artifacts
+      uses: actions/upload-artifact@v3
+      with:
+        name: ${{ inputs.artifacts_name }}
+        path: .data/**/*.csv

@@ -1,0 +1,25 @@
+name: Scheduled mailing - interested
+on:
+  workflow_dispatch:
+#  schedule:
+#    - cron: '0 1 * * *'
+#    - cron: '0 3 * * *'
+#    - cron: '0 5 * * *'
+#    - cron: '0 7 * * *'
+jobs:
+  scheduled_mailing_interested:
+    concurrency:
+      group: scheduled-mailing-interested
+    runs-on: ubuntu-22.04
+    steps:
+      - name: checkout
+        uses: actions/checkout@v3
+      - name: send mailing
+        uses: ./.github/actions/send-candidate-offers-mailing
+        with:
+          run_args: "--schedule --test-email-to=default --test-email-update-db"
+          no_dry_run: "DANGER"
+          mailing_type: "interested"
+          service_account_b64: ${{ secrets.SERVICE_ACCOUNT_B64 }}
+          processing_record_name: "schedule-send-candidate-offers-mailing-interested"
+          processing_record_id: ${{ github.run_id }}
