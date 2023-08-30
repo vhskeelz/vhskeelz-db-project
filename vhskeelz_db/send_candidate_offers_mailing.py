@@ -358,7 +358,7 @@ def main(start_log, log, mailing_type, dry_run=False, allow_send=False, test_ema
                         '{details_url_sql}' details_url,
                         {fit_desc_sql} fit_desc,
                         count(1) cnt
-                    from vehadarta_candidate_offers_list l
+                    from vehadarta_candidate_offers_list_only_for_mailing l
                     join numbered_positions p on l."positionOfferId" = p.position_id and p.rn = 1
                     join vehadarta_company_and_company_ta t on p."companyId" = t."companyId" and t."companyId" != 'null'
                     where {where_sql}
