@@ -1,0 +1,31 @@
+name: Send manual mailing
+on:
+  workflow_dispatch:
+    inputs:
+      run_args:
+        description: 'Arguments to pass to the script'
+        default: ''
+      no_dry_run:
+        description: 'Write "DANGER" to disable dry-run (This is dangerous!)'
+        default: ''
+      mailing_type:
+        description: 'Which mailing type to send'
+        default: ''
+        required: true
+jobs:
+  send_manual_mailing:
+    concurrency:
+      group: send-manual-mailing-${{ inputs.mailing_type }}
+    runs-on: ubuntu-22.04
+    steps:
+      - name: checkout
+        uses: actions/checkout@v3
+      - name: send mailing
+        uses: ./.github/actions/send-candidate-offers-mailing
+        with:
+          run_args: ${{ inputs.run_args }}
+          no_dry_run: ${{ inputs.no_dry_run }}
+          mailing_type: ${{ inputs.mailing_type }}
+          service_account_b64: ${{ secrets.SERVICE_ACCOUNT_B64 }}
+          processing_record_name: "manual-send-candidate-offers-mailing-${{ inputs.mailing_type }}"
+          processing_record_id: ${{ github.run_id }}

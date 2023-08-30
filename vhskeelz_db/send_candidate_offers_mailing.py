@@ -290,37 +290,8 @@ def db_insert_statuses(mailing_type, candidate_position_ids, status):
                 ''')
 
 
-def check_schedule(mailing_type, log):
-    process_name = f'schedule-send-candidate-offers-mailing-{mailing_type}'
-    row = processing_record.get_last_finished_at(process_name)
-    if not row:
-        log(f'No previous record for {process_name}')
-        return True
-    last_started_at = row['started_at']
-    now = datetime.datetime.now()
-    delta_kwargs = {
-        # Monday == 0 ... Sunday == 6
-        'num_fits': {'days': 1, 'only_on_days': [6, 2]},  # only on Sundays and Wednesdays
-        'interested': {'days': 1},
-        'new_matches': {'days': 1, 'only_on_days': [3]},  # only on Thursdays
-    }[mailing_type]
-    only_on_days = delta_kwargs.pop('only_on_days', None)
-    lee_way = datetime.timedelta(hours=3)
-    if now - last_started_at < datetime.timedelta(**delta_kwargs) - lee_way:
-        log(f'Previous record for {process_name} started too recently, skipping')
-        return False
-    if only_on_days and now.weekday() not in only_on_days:
-        log(f'Not a day to send {mailing_type}, skipping')
-        return False
-    return True
-
-
-def main(start_log, log, mailing_type, dry_run=False, allow_send=False, test_email_to=None, test_email_limit=None, test_email_update_db=False,
-         only_candidate_position_ids=None, schedule=False):
-    if schedule and not check_schedule(mailing_type, log):
-        log(f'Skipping {mailing_type} due to schedule')
-        return
-    start_log()
+def main(log, mailing_type, dry_run=False, allow_send=False, test_email_to=None, test_email_limit=None, test_email_update_db=False,
+         only_candidate_position_ids=None):
     run_migrations(log, mailing_type)
     with get_db_engine().connect() as conn:
         with conn.begin():
