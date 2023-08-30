@@ -2,11 +2,11 @@ name: Clear processing record
 on:
   workflow_dispatch:
   schedule:
-    - cron: '0 0 * * 4'
+    - cron: '0 12 * * 4'
 jobs:
   clear_processing_record:
     concurrency:
-      group: vhskeelz-db
+      group: db-update
     runs-on: ubuntu-22.04
     steps:
       - name: checkout
