@@ -2,11 +2,8 @@ name: Scheduled mailing - interested
 on:
   workflow_dispatch:
   schedule:
-    # Every day at 01:31, 03:39, 05:37, 07:33
+    # Every day at 01:31 (UTC)
     - cron: '31 1 * * *'
-    - cron: '39 3 * * *'
-    - cron: '37 5 * * *'
-    - cron: '33 7 * * *'
 jobs:
   scheduled_mailing_interested:
     concurrency:

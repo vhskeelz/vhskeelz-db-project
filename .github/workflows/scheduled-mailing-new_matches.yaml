@@ -2,11 +2,8 @@ name: Scheduled mailing - new_matches
 on:
   workflow_dispatch:
   schedule:
-    # Every Thursday at 01:43, 03:45, 05:48, 07:42
+    # Every Thursday at 01:43 (UTC)
     - cron: '43 1 * * 4'
-    - cron: '45 3 * * 4'
-    - cron: '48 5 * * 4'
-    - cron: '42 7 * * 4'
 jobs:
   scheduled_mailing_new_matches:
     concurrency:
