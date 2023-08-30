@@ -36,7 +36,7 @@ runs:
       env:
         PROCESSING_RECORD_ENABLED: "true"
         PROCESSING_RECORD_NAME: ${{ inputs.processing_record_name }}
-        PROCESSING_RECORD_ID: ${{ inputs.processing_record_name }}
+        PROCESSING_RECORD_ID: ${{ inputs.processing_record_id }}
         SERVICE_ACCOUNT_FILE: service_account.json
       run: |
         CMD="poetry run vhskeelz-db send-candidate-offers-mailing ${{ inputs.mailing_type }}"
