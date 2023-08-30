@@ -10,7 +10,7 @@ on:
 jobs:
   scheduled_mailing_interested:
     concurrency:
-      group: scheduled-mailing-interested
+      group: mailing-interested
     runs-on: ubuntu-22.04
     steps:
       - name: checkout

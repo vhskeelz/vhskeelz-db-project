@@ -10,7 +10,7 @@ on:
 jobs:
   scheduled_mailing_num_fits:
     concurrency:
-      group: scheduled-mailing-num_fits
+      group: mailing-num_fits
     runs-on: ubuntu-22.04
     steps:
       - name: checkout
