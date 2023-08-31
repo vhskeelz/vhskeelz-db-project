@@ -64,9 +64,11 @@ def main(log, only_emails=None, limit=None, debug=False):
         smoove_candidate = process_output_row(candidate)
         if only_emails and smoove_candidate['email'] not in only_emails:
             continue
+        elif smoove_candidate['email'] in uuids:
+            log(f'skipping duplicate email: {smoove_candidate["email"]}')
+            continue
         if debug:
             log(smoove_candidate)
-        assert smoove_candidate['email'] not in uuids, f'duplicate email {smoove_candidate["email"]}'
         try:
             # first we only create new contacts, we don't update existing contacts
             res = requests.post(

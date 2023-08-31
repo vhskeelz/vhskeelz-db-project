@@ -1,3 +1,4 @@
+import traceback
 from textwrap import dedent
 from functools import partial
 from contextlib import contextmanager
@@ -47,12 +48,15 @@ def processing_record(delayed_start=False):
     if config.PROCESSING_RECORD_ENABLED:
         if not delayed_start:
             start(config.PROCESSING_RECORD_NAME, config.PROCESSING_RECORD_ID)
+        log_partial = partial(log, config.PROCESSING_RECORD_NAME, config.PROCESSING_RECORD_ID)
         try:
-            log_partial = partial(log, config.PROCESSING_RECORD_NAME, config.PROCESSING_RECORD_ID)
             if delayed_start:
                 yield partial(start, config.PROCESSING_RECORD_NAME, config.PROCESSING_RECORD_ID), log_partial
             else:
                 yield log_partial
+        except:
+            log_partial(traceback.format_exc())
+            raise Exception()
         finally:
             finish(config.PROCESSING_RECORD_NAME, config.PROCESSING_RECORD_ID)
     elif delayed_start:
