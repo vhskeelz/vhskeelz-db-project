@@ -15,9 +15,9 @@ def process_input_row(row):
         if v == 'null':
             v = None
         if k == 'gender':
-            v = {'0': 'male', '1': 'female'}.get(v, 'other')
-        elif k == 'birth_date':
-            v = datetime.datetime.strptime(v, '%b %d, %Y').date() if v else None
+            v = {'Male': 'male', 'Female': 'female'}.get(v, 'other')
+        # elif k == 'birth_date':
+        #     v = datetime.datetime.strptime(v, '%b %d, %Y').date() if v else None
         else:
             v = v.strip() if v else None
             if not v:
@@ -27,19 +27,19 @@ def process_input_row(row):
 
 
 def process_output_row(row):
-    try:
-        id_number = int(row['id_number']) if row['id_number'] else None
-    except ValueError:
-        id_number = None
+    # try:
+    #     id_number = int(row['id_number']) if row['id_number'] else None
+    # except ValueError:
+    #     id_number = None
     return {
         "email": row['email'],
         "firstName": row['first_name'],
         "lastName": row['last_name'],
         "phone": row['phone_number'],
         "city": row['city'],
-        "dateOfBirth": '{}T12:00:00.0000000Z'.format(row['birth_date'].strftime('%Y-%m-%d')) if row['birth_date'] else None,
+        # "dateOfBirth": '{}T12:00:00.0000000Z'.format(row['birth_date'].strftime('%Y-%m-%d')) if row['birth_date'] else None,
         "customFields": {
-            "i39": id_number,
+            # "i39": id_number,
             "i50": {'male': 'זכר', 'female': 'נקבה', 'other': None}[row['gender']]
         },
         "lists_ToSubscribe": [STUDIO_LIST_ID]
@@ -50,8 +50,8 @@ def iterate_candidates():
     with get_db_engine().connect() as conn:
         with conn.begin():
             for row in conn.execute("""
-                select email, "firstName" first_name, "lastName" last_name, "phoneNumber" phone_number, city, "birthDate" birth_date, gender, "idNumber" id_number
-                from vehadarta_db_candidate
+                select email, first_name, last_name, phone_number, city, gender
+                from vehadarta_candidate_data_uniques_candidates
             """):
                 yield process_input_row(dict(row))
 
