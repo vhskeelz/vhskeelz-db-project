@@ -208,14 +208,14 @@ def get_mail_data(grouped_rows, mailing_type, log):
     elif mailing_type == 'new_matches':
         for rows in grouped_rows.values():
             first_row = rows[0]
-            fits = [
-                {
+            fits = {}
+            for row in rows:
+                fits[row['position_name']] = {
                     "date": row['creation_date'].strftime('%d/%m/%Y'),
                     "name": row['position_name'],
                     "fit": row['fit_desc']
                 }
-                for row in rows
-            ]
+            fits = list(fits.values())
             data.append({
                 "from_email": from_email,
                 "to_emails": first_row['candidate_email'],
