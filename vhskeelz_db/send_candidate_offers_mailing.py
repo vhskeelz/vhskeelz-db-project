@@ -149,6 +149,14 @@ def get_group_key(row, mailing_type):
     }[mailing_type]
 
 
+def get_email_field(mailing_type):
+    return {
+        'num_fits': 'company_email',
+        'interested': 'company_email',
+        'new_matches': 'candidate_email',
+    }[mailing_type]
+
+
 def download_cvs(position_candidate_ids, log):
     log(f'Downloading CVs for {len(position_candidate_ids)} candidate positions')
     download_position_candidate_cv.main_multi(log, position_candidate_ids, save_to_gcs=True)
@@ -163,7 +171,7 @@ def get_mail_data(grouped_rows, mailing_type, log):
             first_row = rows[0]
             data.append({
                 "from_email": from_email,
-                "to_emails": first_row['company_email'],
+                "to_emails": first_row[get_email_field(mailing_type)],
                 "template_id": template_id,
                 "dynamic_template_data": {
                     "company_name": first_row['company_name'],
@@ -191,7 +199,7 @@ def get_mail_data(grouped_rows, mailing_type, log):
                 position_candidate_ids.add((row['position_id'], row['candidate_id']))
                 data.append({
                     "from_email": from_email,
-                    "to_emails": row['company_email'],
+                    "to_emails": row[get_email_field(mailing_type)],
                     "template_id": template_id,
                     "pdf_attachment_filename": cv_filename,
                     'pdf_attachment_name': f"{row['candidate_name']} - {row['position_name']}.pdf",
@@ -218,7 +226,7 @@ def get_mail_data(grouped_rows, mailing_type, log):
             fits = list(fits.values())
             data.append({
                 "from_email": from_email,
-                "to_emails": first_row['candidate_email'],
+                "to_emails": first_row[get_email_field(mailing_type)],
                 "template_id": template_id,
                 "dynamic_template_data": {
                     "candidate_name": first_row['candidate_name'],
@@ -290,6 +298,53 @@ def db_insert_statuses(mailing_type, candidate_position_ids, status):
                 ''')
 
 
+def remove_blocklists(log, mailing_type, rows):
+    with get_db_engine().connect() as conn:
+        with conn.begin():
+            block_candidate_id_position_id = [
+                (row.candidate_id.strip(), row.position_id.strip())
+                for row in conn.execute('''select "Candidate_id" candidate_id, "Position_id" position_id from aggregation_candidate_positions where "Remove" = 'TRUE' ''')
+                if row.candidate_id and row.position_id
+            ]
+            log(f'Found {len(block_candidate_id_position_id)} block candidate_id_position_id')
+            block_candidate_id = [
+                row.candidate_id.strip()
+                for row in conn.execute('''select "Candidate_id" candidate_id from aggregation_candidates where "Remove_can" = 'TRUE' ''')
+                if row.candidate_id
+            ]
+            log(f'Found {len(block_candidate_id)} block candidate_id')
+            block_position_id = [
+                row.position_id.strip()
+                for row in conn.execute('''select "P_ID" position_id from aggregation_positions where "Remove_P" = 'TRUE' ''')
+                if row.position_id
+            ]
+            log(f'Found {len(block_position_id)} block position_id')
+            smoove_blocklist_emails = [
+                row.email.strip()
+                for row in conn.execute('select email from smoove_blocklist')
+                if row.email
+            ]
+            log(f'Found {len(smoove_blocklist_emails)} smoove_blocklist_emails')
+    valid_rows = []
+    blocked_candidate_id_position_id = 0
+    blocked_candidate_id = 0
+    blocked_position_id = 0
+    blocked_smoove_email = 0
+    for row in rows:
+        if (row['candidate_id'].strip(), row['position_id'].strip()) in block_candidate_id_position_id:
+            blocked_candidate_id_position_id += 1
+        elif row['candidate_id'].strip() in block_candidate_id:
+            blocked_candidate_id += 1
+        elif row['position_id'].strip() in block_position_id:
+            blocked_position_id += 1
+        elif row[get_email_field(mailing_type)].strip() in smoove_blocklist_emails:
+            blocked_smoove_email += 1
+        else:
+            valid_rows.append(row)
+    log(f'Blocked {blocked_candidate_id_position_id} candidate_id_position_id, {blocked_candidate_id} candidate_id, {blocked_position_id} position_id, {blocked_smoove_email} smoove emails')
+    return valid_rows
+
+
 def main(log, mailing_type, dry_run=False, allow_send=False, test_email_to=None, test_email_limit=None, test_email_update_db=False,
          only_candidate_position_ids=None):
     run_migrations(log, mailing_type)
@@ -341,6 +396,7 @@ def main(log, mailing_type, dry_run=False, allow_send=False, test_email_to=None,
     if only_candidate_position_ids:
         rows = [row for row in rows if [row['candidate_id'], row['position_id']] in only_candidate_position_ids]
     log(f"Fetched {len(rows)} candidate positions")
+    rows = remove_blocklists(log, mailing_type, rows)
     grouped_rows = {}
     for row in rows:
         group_key = ';;'.join(get_group_key(row, mailing_type))

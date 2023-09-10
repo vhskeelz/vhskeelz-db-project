@@ -120,3 +120,7 @@ def update_smoove_candidates_mailing_list(**kwargs):
     with processing_record() as log:
         update_smoove_candidates_mailing_list.main(log, **kwargs)
     print("OK")
+
+
+if __name__ == '__main__':
+    main()
