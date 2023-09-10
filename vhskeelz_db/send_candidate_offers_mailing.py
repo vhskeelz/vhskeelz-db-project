@@ -16,6 +16,7 @@ def get_dry_run_save_path(mailing_type):
         'num_fits': 'candidate_offers_num_fits_mailing',
         'interested': 'candidate_offers_interested_mailing',
         'new_matches': 'candidate_offers_new_matches_mailing',
+        'new_position': 'candidate_offers_new_position_mailing',
     }[mailing_type]
     return os.path.join(config.DATA_DIR, dirname, 'dry_run')
 
@@ -25,6 +26,7 @@ def get_db_status_table_name(mailing_type):
         'num_fits': 'candidate_offers_num_fits_mailing_status',
         'interested': 'candidate_offers_interested_mailing_status',
         'new_matches': 'candidate_offers_new_matches_mailing_status',
+        'new_position': 'candidate_offers_new_position_mailing_status',
     }[mailing_type]
 
 
@@ -146,6 +148,7 @@ def get_group_key(row, mailing_type):
         'num_fits': (row['company_email'], row['position_id'], row['city']),
         'interested': (row['company_email'],),
         'new_matches': (row['candidate_email'],),
+        'new_position': (row['company_email'], row['position_id']),
     }[mailing_type]
 
 
@@ -154,6 +157,7 @@ def get_email_field(mailing_type):
         'num_fits': 'company_email',
         'interested': 'company_email',
         'new_matches': 'candidate_email',
+        'new_position': 'company_email',
     }[mailing_type]
 
 
@@ -232,6 +236,19 @@ def get_mail_data(grouped_rows, mailing_type, log):
                     "candidate_name": first_row['candidate_name'],
                     "num_fits": len(fits),
                     "fits": fits
+                },
+                'candidate_position_ids': [[row['candidate_id'], row['position_id']] for row in rows]
+            })
+    elif mailing_type == 'new_position':
+        for rows in grouped_rows.values():
+            first_row = rows[0]
+            data.append({
+                "from_email": from_email,
+                "to_emails": first_row[get_email_field(mailing_type)],
+                "template_id": template_id,
+                "dynamic_template_data": {
+                    "company_name": first_row['company_name'],
+                    "position_name": first_row['position_name'],
                 },
                 'candidate_position_ids': [[row['candidate_id'], row['position_id']] for row in rows]
             })
@@ -345,9 +362,7 @@ def remove_blocklists(log, mailing_type, rows):
     return valid_rows
 
 
-def main(log, mailing_type, dry_run=False, allow_send=False, test_email_to=None, test_email_limit=None, test_email_update_db=False,
-         only_candidate_position_ids=None):
-    run_migrations(log, mailing_type)
+def get_candidate_position_rows(log, mailing_type):
     with get_db_engine().connect() as conn:
         with conn.begin():
             log("Fetching candidate positions...")
@@ -357,7 +372,7 @@ def main(log, mailing_type, dry_run=False, allow_send=False, test_email_to=None,
             )
             fit_desc_sql = get_fit_desc_sql(mailing_type)
             where_sql = get_where_sql(mailing_type)
-            rows = [
+            return [
                 {
                     'candidate_id': row.candidate_id,
                     'position_id': row.position_id,
@@ -393,8 +408,49 @@ def main(log, mailing_type, dry_run=False, allow_send=False, test_email_to=None,
                         l."fitPercentage", p.city, l.email, p."dateCreated"
                 '''))
             ]
-    if only_candidate_position_ids:
-        rows = [row for row in rows if [row['candidate_id'], row['position_id']] in only_candidate_position_ids]
+
+
+def get_new_position_candidate_position_rows(log):
+    with get_db_engine().connect() as conn:
+        with conn.begin():
+            log("Fetching candidate positions...")
+            return [
+                {
+                    'candidate_id': '-',
+                    'position_id': row.position_id,
+                    'candidate_name': '-',
+                    'company_email': row.ta_email,
+                    'company_name': row.ta_name,
+                    'position_name': row.position_name,
+                    'city': '-',
+                    'details_url': '-',
+                    'fit_desc': '-',
+                    'candidate_email': '-',
+                    'creation_date': datetime.datetime.now()
+                } for row
+                in conn.execute(dedent('''
+                    select p.position_id, p.position_name, t.ta_email, t.ta_name
+                    from vehadarta_positions_skills p
+                    join vehadarta_company_and_company_ta t on p."companyId" = t."companyId" and t."companyId" != 'null'
+                    where p.position_id not in (
+                        select "positionOfferId"
+                        from candidate_offers_new_position_mailing_status
+                        where status = 'sent'
+                    )
+                    group by p.position_id, p.position_name, t.ta_email, t.ta_name
+                '''))
+            ]
+
+
+def main(log, mailing_type, dry_run=False, allow_send=False, test_email_to=None, test_email_limit=None, test_email_update_db=False,
+         only_candidate_position_ids=None):
+    run_migrations(log, mailing_type)
+    if mailing_type == 'new_position':
+        rows = get_new_position_candidate_position_rows(log)
+    else:
+        rows = get_candidate_position_rows(log, mailing_type)
+        if only_candidate_position_ids:
+            rows = [row for row in rows if [row['candidate_id'], row['position_id']] in only_candidate_position_ids]
     log(f"Fetched {len(rows)} candidate positions")
     rows = remove_blocklists(log, mailing_type, rows)
     grouped_rows = {}

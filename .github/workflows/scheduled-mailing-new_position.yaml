@@ -1,13 +1,13 @@
-name: Scheduled mailing - new_matches
+name: Scheduled mailing - new_position
 on:
   workflow_dispatch:
   schedule:
-    # Every Thursday at 07:03 (UTC) == 10:03 (Israel)
-    - cron: '3 7 * * 4'
+    # Every day at 01:52 (UTC)
+    - cron: '52 1 * * *'
 jobs:
-  scheduled_mailing_new_matches:
+  scheduled_mailing_new_position:
     concurrency:
-      group: mailing-new_matches
+      group: mailing-new_position
     runs-on: ubuntu-22.04
     steps:
       - name: checkout
@@ -17,7 +17,7 @@ jobs:
         with:
           run_args: "--test-email-to=default --test-email-update-db"
           no_dry_run: "DANGER"
-          mailing_type: "new_matches"
+          mailing_type: "new_position"
           service_account_b64: ${{ secrets.SERVICE_ACCOUNT_B64 }}
-          processing_record_name: "schedule-send-candidate-offers-mailing-new_matches"
+          processing_record_name: "schedule-send-candidate-offers-mailing-new_position"
           processing_record_id: ${{ github.run_id }}
