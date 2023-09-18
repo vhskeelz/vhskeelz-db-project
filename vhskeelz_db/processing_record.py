@@ -68,7 +68,13 @@ def processing_record(delayed_start=False):
 def clear():
     with get_db_engine().connect() as conn:
         with conn.begin():
-            conn.execute('drop table processing_record_log;')
+            if conn.execute('select count(1) from processing_record_log;').first().count > 100000:
+                print('Clearing processing_record_log')
+                conn.execute('''
+                    drop table processing_record_log;
+                ''')
+            else:
+                print('Skipping clearing processing_record_log')
 
 
 def get_last_finished_at(process_name):
