@@ -2,6 +2,7 @@ name: DB update
 on:
   workflow_dispatch:
   schedule:
+    # Daily 00:22 (UTC) == 03:22 (Israel)
     - cron: '0 22 * * *'
 jobs:
   db_update:

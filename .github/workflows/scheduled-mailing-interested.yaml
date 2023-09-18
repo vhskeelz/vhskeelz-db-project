@@ -2,7 +2,7 @@ name: Scheduled mailing - interested
 on:
   workflow_dispatch:
   schedule:
-    # Every day at 01:31 (UTC)
+    # Every day at 03:31 (UTC) == 06:31 (Israel)
     - cron: '31 1 * * *'
 jobs:
   scheduled_mailing_interested:

@@ -2,8 +2,8 @@ name: Scheduled mailing - new_matches
 on:
   workflow_dispatch:
   schedule:
-    # Every Thursday at 07:03 (UTC) == 10:03 (Israel)
-    - cron: '3 7 * * 4'
+    # Every day at 14:03 (UTC) == 17:03 (Israel)
+    - cron: '3 14 * * *'
 jobs:
   scheduled_mailing_new_matches:
     concurrency:
@@ -15,7 +15,7 @@ jobs:
       - name: send mailing
         uses: ./.github/actions/send-candidate-offers-mailing
         with:
-          run_args: "--test-email-to=default --test-email-update-db"
+          run_args: "--allow-send"
           no_dry_run: "DANGER"
           mailing_type: "new_matches"
           service_account_b64: ${{ secrets.SERVICE_ACCOUNT_B64 }}

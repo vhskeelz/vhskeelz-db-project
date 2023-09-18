@@ -2,7 +2,7 @@ name: Scheduled mailing - new_position
 on:
   workflow_dispatch:
   schedule:
-    # Every day at 01:52 (UTC)
+    # Every day at 03:52 (UTC) == 06:52 (Israel)
     - cron: '52 1 * * *'
 jobs:
   scheduled_mailing_new_position:
