@@ -402,7 +402,7 @@ def get_candidate_position_rows(log, mailing_type):
                     from vehadarta_candidate_offers_list_only_for_mailing l
                     join numbered_positions p on l."positionOfferId" = p.position_id and p.rn = 1
                     join vehadarta_company_and_company_ta t
-                        on t."companyId" != 'null' and (p."companyId" = t."companyId" or p.comp_id = t."companyId")
+                        on p."companyId" != 'null' and (p."companyId" = t."companyId" or p."companyId" = t.comp_id)
                     where {where_sql}
                     group by
                         l.candidate_id, l."positionOfferId", l."Candidate name", t.ta_email, t.ta_name, p.position_name, 
@@ -433,7 +433,7 @@ def get_new_position_candidate_position_rows(log):
                     select p.position_id, p.position_name, t.ta_email, t.ta_name
                     from vehadarta_positions_skills p
                     join vehadarta_company_and_company_ta t
-                        on t."companyId" != 'null' and (p."companyId" = t."companyId" or p.comp_id = t."companyId")
+                        on p."companyId" != 'null' and (p."companyId" = t."companyId" or p."companyId" = t.comp_id)
                     where p.position_id not in (
                         select "positionOfferId"
                         from candidate_offers_new_position_mailing_status
