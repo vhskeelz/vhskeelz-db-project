@@ -391,6 +391,7 @@ def get_candidate_position_rows(log, mailing_type):
                     with numbered_positions as (
                         select *, row_number() over (partition by "position_id" order by "position_id") as rn
                         from vehadarta_positions_skills
+                        where active != '0'
                     )
                     select
                         l.candidate_id, l."positionOfferId" position_id, l."Candidate name" candidate_name,
@@ -438,7 +439,7 @@ def get_new_position_candidate_position_rows(log):
                         select "positionOfferId"
                         from candidate_offers_new_position_mailing_status
                         where status = 'sent'
-                    )
+                    ) and p.active != '0'
                     group by p.position_id, p.position_name, t.ta_email, t.ta_name
                 '''))
             ]
