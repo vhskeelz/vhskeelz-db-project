@@ -53,4 +53,4 @@ runs:
       uses: actions/upload-artifact@v3
       with:
         name: ${{ inputs.artifacts_name }}
-        path: .data/**/*.csv
+        path: .data/**
