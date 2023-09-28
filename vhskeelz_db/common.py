@@ -8,10 +8,10 @@ def requests_session_retry(total=10, backoff_factor=2, backoff_max=60, status_fo
     retries = Retry(
         total=total,
         backoff_factor=backoff_factor,
-        backoff_max=backoff_max,
         status_forcelist=status_forcelist,
         **kwargs
     )
+    retries.DEFAULT_BACKOFF_MAX = backoff_max
     s.mount('https://', HTTPAdapter(max_retries=retries))
     s.mount('http://', HTTPAdapter(max_retries=retries))
     return s
