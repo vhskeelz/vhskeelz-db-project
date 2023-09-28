@@ -1,10 +1,8 @@
 import time
 import datetime
 
-import requests
-
 from .db import get_db_engine
-from . import config
+from . import config, common
 
 
 STUDIO_LIST_ID = 865719
@@ -60,6 +58,7 @@ def main(log, only_emails=None, limit=None, debug=False):
     if only_emails:
         only_emails = [e.strip() for e in only_emails.split(',') if e.strip()]
     uuids = {}
+    requests_session = common.requests_session_retry()
     for candidate in iterate_candidates():
         smoove_candidate = process_output_row(candidate)
         if only_emails and smoove_candidate['email'] not in only_emails:
@@ -71,7 +70,7 @@ def main(log, only_emails=None, limit=None, debug=False):
             log(smoove_candidate)
         try:
             # first we only create new contacts, we don't update existing contacts
-            res = requests.post(
+            res = requests_session.post(
                 'https://rest.smoove.io/v1/async/contacts?updateIfExists=false&restoreIfDeleted=false&restoreIfUnsubscribed=false&overrideNullableValue=false',
                 json=smoove_candidate,
                 headers={'Authorization': f'Bearer {config.SMOOVE_API_KEY}'}
@@ -83,7 +82,7 @@ def main(log, only_emails=None, limit=None, debug=False):
             raise
         try:
             # then we update all contacts to add them to the mailing list
-            res = requests.post(
+            res = requests_session.post(
                 'https://rest.smoove.io/v1/async/contacts?updateIfExists=true&restoreIfDeleted=false&restoreIfUnsubscribed=false&overrideNullableValue=false',
                 json={
                     "email": smoove_candidate['email'],
@@ -109,7 +108,7 @@ def main(log, only_emails=None, limit=None, debug=False):
             for i, update_res in enumerate(update_results):
                 if update_res is not None:
                     num_updated += 1
-                    res = requests.get(
+                    res = requests_session.get(
                         f'https://rest.smoove.io/v1/async/contacts/{update_res["Uuid"]}/{update_res["Timestamp"]}/status',
                         headers={'Authorization': f'Bearer {config.SMOOVE_API_KEY}'}
                     )
