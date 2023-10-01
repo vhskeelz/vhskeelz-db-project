@@ -2,8 +2,8 @@ name: Scheduled mailing - num_fits
 on:
   workflow_dispatch:
   schedule:
-    # every Sunday and Wednesday at 03:21 (UTC) == 06:21 (Israel)
-    - cron: '21 1 * * 0,3'
+    # every Sunday and Wednesday at 05:56 (UTC) == 08:56 (Israel)
+    - cron: '56 5 * * 0,3'
 jobs:
   scheduled_mailing_num_fits:
     concurrency:
