@@ -58,7 +58,7 @@ def main(log, only_emails=None, limit=None, debug=False):
     if only_emails:
         only_emails = [e.strip() for e in only_emails.split(',') if e.strip()]
     uuids = {}
-    requests_session = common.requests_session_retry()
+    requests_session = common.requests_session_retry(status_forcelist=(500, 502, 503, 504))
     for candidate in iterate_candidates():
         smoove_candidate = process_output_row(candidate)
         if only_emails and smoove_candidate['email'] not in only_emails:
@@ -116,9 +116,11 @@ def main(log, only_emails=None, limit=None, debug=False):
                     if res.json()['status'] == 'Succeeded':
                         uuids[email][i] = None
         if any([any(update_results) for email, update_results in uuids.items()]):
-            if datetime.datetime.now() - start_time > datetime.timedelta(hours=4):
-                raise Exception('timeout')
             log("Waiting for smoove to finish processing...")
+            for email, update_results in uuids.items():
+                log(f'{email}: {update_results}')
+            if datetime.datetime.now() - start_time > datetime.timedelta(minutes=30):
+                raise Exception('timeout')
             time.sleep(60)
         else:
             break
