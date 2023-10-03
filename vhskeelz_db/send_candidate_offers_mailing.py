@@ -8,7 +8,21 @@ from sendgrid import SendGridAPIClient
 from sendgrid.helpers.mail import Mail, Asm, Attachment, FileContent, FileName, FileType, Disposition
 
 from .db import get_db_engine
-from . import config, download_position_candidate_cv, processing_record
+from . import config, download_position_candidate_cv, load_data
+
+
+# we use this to ensure that the tables we use are updated before running
+DEPENDANT_TABLES = {
+    t: t for t in [
+        'vehadarta_positions_skills',
+        'vehadarta_company_and_company_ta',
+        'vehadarta_candidate_offers_list_only_for_mailing',
+        'smoove_blocklist',
+        'aggregation_candidates',
+        'aggregation_positions',
+        'aggregation_candidate_positions',
+    ]
+}
 
 
 def get_dry_run_save_path(mailing_type):
@@ -320,25 +334,25 @@ def remove_blocklists(log, mailing_type, rows):
         with conn.begin():
             block_candidate_id_position_id = [
                 (row.candidate_id.strip(), row.position_id.strip())
-                for row in conn.execute('''select "Candidate_id" candidate_id, "Position_id" position_id from aggregation_candidate_positions where "Remove" = 'TRUE' ''')
+                for row in conn.execute(f'''select "Candidate_id" candidate_id, "Position_id" position_id from {DEPENDANT_TABLES['aggregation_candidate_positions']} where "Remove" = 'TRUE' ''')
                 if row.candidate_id and row.position_id
             ]
             log(f'Found {len(block_candidate_id_position_id)} block candidate_id_position_id')
             block_candidate_id = [
                 row.candidate_id.strip()
-                for row in conn.execute('''select "Candidate_id" candidate_id from aggregation_candidates where "Remove_can" = 'TRUE' ''')
+                for row in conn.execute(f'''select "Candidate_id" candidate_id from {DEPENDANT_TABLES['aggregation_candidates']} where "Remove_can" = 'TRUE' ''')
                 if row.candidate_id
             ]
             log(f'Found {len(block_candidate_id)} block candidate_id')
             block_position_id = [
                 row.position_id.strip()
-                for row in conn.execute('''select "P_ID" position_id from aggregation_positions where "Remove_P" = 'TRUE' ''')
+                for row in conn.execute(f'''select "P_ID" position_id from {DEPENDANT_TABLES['aggregation_positions']} where "Remove_P" = 'TRUE' ''')
                 if row.position_id
             ]
             log(f'Found {len(block_position_id)} block position_id')
             smoove_blocklist_emails = [
                 row.email.strip()
-                for row in conn.execute('select email from smoove_blocklist')
+                for row in conn.execute(f'select email from {DEPENDANT_TABLES["smoove_blocklist"]}')
                 if row.email
             ]
             log(f'Found {len(smoove_blocklist_emails)} smoove_blocklist_emails')
@@ -390,7 +404,7 @@ def get_candidate_position_rows(log, mailing_type):
                 in conn.execute(dedent(f'''
                     with numbered_positions as (
                         select *, row_number() over (partition by "position_id" order by "position_id") as rn
-                        from vehadarta_positions_skills
+                        from {DEPENDANT_TABLES['vehadarta_positions_skills']}
                         where active != '0'
                     )
                     select
@@ -400,9 +414,9 @@ def get_candidate_position_rows(log, mailing_type):
                         '{details_url_sql}' details_url,
                         {fit_desc_sql} fit_desc,
                         count(1) cnt
-                    from vehadarta_candidate_offers_list_only_for_mailing l
+                    from {DEPENDANT_TABLES['vehadarta_candidate_offers_list_only_for_mailing']} l
                     join numbered_positions p on l."positionOfferId" = p.position_id and p.rn = 1
-                    join vehadarta_company_and_company_ta t
+                    join {DEPENDANT_TABLES['vehadarta_company_and_company_ta']} t
                         on p."companyId" != 'null' and (p."companyId" = t."companyId" or p."companyId" = t.comp_id)
                     where {where_sql}
                     group by
@@ -430,10 +444,10 @@ def get_new_position_candidate_position_rows(log):
                     'candidate_email': '-',
                     'creation_date': datetime.datetime.now()
                 } for row
-                in conn.execute(dedent('''
+                in conn.execute(dedent(f'''
                     select p.position_id, p.position_name, t.ta_email, t.ta_name
-                    from vehadarta_positions_skills p
-                    join vehadarta_company_and_company_ta t
+                    from {DEPENDANT_TABLES['vehadarta_positions_skills']} p
+                    join {DEPENDANT_TABLES['vehadarta_company_and_company_ta']} t
                         on p."companyId" != 'null' and (p."companyId" = t."companyId" or p."companyId" = t.comp_id)
                     where p.position_id not in (
                         select "positionOfferId"
@@ -446,7 +460,9 @@ def get_new_position_candidate_position_rows(log):
 
 
 def main(log, mailing_type, dry_run=False, allow_send=False, test_email_to=None, test_email_limit=None, test_email_update_db=False,
-         only_candidate_position_ids=None):
+         only_candidate_position_ids=None, ensure_updated_tables=False):
+    if ensure_updated_tables:
+        load_data.ensure_updated_tables(log, DEPENDANT_TABLES.keys())
     run_migrations(log, mailing_type)
     if mailing_type == 'new_position':
         rows = get_new_position_candidate_position_rows(log)

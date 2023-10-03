@@ -1,4 +1,7 @@
 import os
+import time
+import random
+import traceback
 from textwrap import dedent
 
 
@@ -47,9 +50,9 @@ def load_table(table_name):
                 '''))
 
 
-def main(log, extract=False, only_table_name=None):
+def main(log, extract=False, only_table_name=None, cache=None):
     if extract:
-        for table_name in extract_data.main(log, only_table_name=only_table_name):
+        for table_name in extract_data.main(log, only_table_name=only_table_name, cache=cache):
             log(f'Extracted {table_name}')
             load_table(table_name)
             yield table_name
@@ -76,3 +79,26 @@ def main(log, extract=False, only_table_name=None):
                     with conn.begin():
                         conn.execute(sql)
                 log(f'Updated view {name}')
+
+
+def ensure_updated_tables(log, table_names):
+    cache = {}
+    for table_name in table_names:
+        log(f'Updating table {table_name}...')
+        i = 0
+        updated_table_names = []
+        while True:
+            i += 1
+            try:
+                updated_table_names = list(main(log, extract=True, only_table_name=table_name, cache=cache))
+                break
+            except:
+                if i > 3:
+                    raise
+                else:
+                    log(traceback.format_exc())
+                    log(f'Failed to update table {table_name}, retrying ({i})...')
+                    time.sleep(random.randint(2, 10))
+        assert len(updated_table_names) == 1, updated_table_names
+        assert updated_table_names[0] == table_name, updated_table_names
+        log('OK')
