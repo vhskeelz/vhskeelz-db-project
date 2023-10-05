@@ -30,7 +30,7 @@ jobs:
     needs:
       - db_update
     concurrency:
-      group: db-update
+      group: update-smoove
     runs-on: ubuntu-22.04
     steps:
       - name: checkout
@@ -49,7 +49,7 @@ jobs:
     needs:
       - db_update
     concurrency:
-      group: db-update
+      group: update-salesforce
     runs-on: ubuntu-22.04
     steps:
       - name: checkout
@@ -67,8 +67,6 @@ jobs:
   final:
     needs: [update_smoove, update_salesforce]
     if: always()
-    concurrency:
-      group: db-update
     runs-on: ubuntu-22.04
     steps:
       - run: |
