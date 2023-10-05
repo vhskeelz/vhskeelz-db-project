@@ -87,7 +87,7 @@ def debug_dump(driver, basename='debug_dump'):
 def login(log, driver):
     log("Start Login")
     WebDriverWait(driver, 10).until(EC.presence_of_element_located((By.XPATH, "//h2[contains(., 'לכניסת מגייסים')]"))).click()
-    WebDriverWait(driver, 10).until(EC.presence_of_element_located((By.XPATH, "//button[contains(., 'Okta')]"))).click()
+    WebDriverWait(driver, 10).until(EC.presence_of_element_located((By.XPATH, "//button[contains(., 'הרשאת כניסה')]"))).click()
     WebDriverWait(driver, 10).until(EC.presence_of_element_located((By.NAME, 'username'))).send_keys(config.SKEELZ_USERNAME)
     WebDriverWait(driver, 10).until(EC.presence_of_element_located((By.NAME, 'password'))).send_keys(config.SKEELZ_PASSWORD)
     WebDriverWait(driver, 10).until(EC.presence_of_element_located((By.ID, "okta-signin-submit"))).click()
