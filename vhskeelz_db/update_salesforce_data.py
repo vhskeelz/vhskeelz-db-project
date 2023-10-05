@@ -152,6 +152,8 @@ def main(log, reprocess_contact=None):
                         continue
                     sf_account_id = processed_companies_sf_ids[row['comp_id']]
                     assert sf_account_id, f'invalid sf_account_id: {row}'
-                    assert (comp_id, row['ta_email']) not in processed_comp_emails, f'duplicate ta_email: {row}'
-                    processed_comp_emails.add((comp_id, row['ta_email']))
-                    process_contact(comp_id, row['ta_email'], row, sf_url, sf_token, sf_account_id, log)
+                    if (comp_id, row['ta_email']) in processed_comp_emails:
+                        log(f'WARNING: duplicate ta_email: {row}')
+                    else:
+                        processed_comp_emails.add((comp_id, row['ta_email']))
+                        process_contact(comp_id, row['ta_email'], row, sf_url, sf_token, sf_account_id, log)
