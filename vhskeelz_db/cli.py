@@ -123,5 +123,14 @@ def update_smoove_candidates_mailing_list(**kwargs):
     print("OK")
 
 
+@main.command()
+@click.option('--reprocess-contact')
+def update_salesforce_data(**kwargs):
+    from . import update_salesforce_data
+    with processing_record() as log:
+        update_salesforce_data.main(log, **kwargs)
+    print("OK")
+
+
 if __name__ == '__main__':
     main()

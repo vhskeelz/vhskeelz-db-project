@@ -4,15 +4,15 @@ on:
   schedule:
     # Daily 00:22 (UTC) == 03:22 (Israel)
     - cron: '0 22 * * *'
+env:
+  PROCESSING_RECORD_ENABLED: "true"
+  PROCESSING_RECORD_ID: ${{ github.run_id }}
+  SERVICE_ACCOUNT_FILE: service_account.json
 jobs:
   db_update:
     concurrency:
       group: db-update
     runs-on: ubuntu-22.04
-    env:
-      PROCESSING_RECORD_ENABLED: "true"
-      PROCESSING_RECORD_ID: ${{ github.run_id }}
-      SERVICE_ACCOUNT_FILE: service_account.json
     steps:
       - name: checkout
         uses: actions/checkout@v3
@@ -25,7 +25,59 @@ jobs:
         env:
           PROCESSING_RECORD_NAME: ${{ github.event_name }}-github_db_update-load-data
         run: poetry run vhskeelz-db load-data --extract
+
+  update_smoove:
+    needs:
+      - db_update
+    concurrency:
+      group: db-update
+    runs-on: ubuntu-22.04
+    steps:
+      - name: checkout
+        uses: actions/checkout@v3
+      - name: setup vhskeelz-db
+        uses: ./.github/actions/setup-vhskeelz-db
+        with:
+          selenium: "false"
+          service_account_b64: ${{ secrets.SERVICE_ACCOUNT_B64 }}
       - name: run update-smoove-candidates-mailing-list
         env:
           PROCESSING_RECORD_NAME: ${{ github.event_name }}-github_db_update-update-smoove-candidates-mailing-list
         run: poetry run vhskeelz-db update-smoove-candidates-mailing-list
+
+  update_salesforce:
+    needs:
+      - db_update
+    concurrency:
+      group: db-update
+    runs-on: ubuntu-22.04
+    steps:
+      - name: checkout
+        uses: actions/checkout@v3
+      - name: setup vhskeelz-db
+        uses: ./.github/actions/setup-vhskeelz-db
+        with:
+          selenium: "false"
+          service_account_b64: ${{ secrets.SERVICE_ACCOUNT_B64 }}
+      - name: run update-salesforce-data
+        env:
+          PROCESSING_RECORD_NAME: ${{ github.event_name }}-github_db_update-update-salesforce-data
+        run: poetry run vhskeelz-db update-salesforce-data
+
+  final:
+    needs: [update_smoove, update_salesforce]
+    if: always()
+    concurrency:
+      group: db-update
+    runs-on: ubuntu-22.04
+    steps:
+      - run: |
+          if [ "${{ needs.update_smoove.result }}" != "success" ]; then
+            echo "Update Smoove failed"
+            exit 1
+          fi
+          if [ "${{ needs.update_salesforce.result }}" != "success" ]; then
+              echo "Update Salesforce failed"
+              exit 1
+          fi
+          echo "All jobs succeeded"
