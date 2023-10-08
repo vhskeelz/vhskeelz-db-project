@@ -80,7 +80,11 @@ def process_company(row, sf_url, sf_token, log):
 
 def process_contact(comp_id, ta_email, row, sf_url, sf_token, sf_account_id, log):
     try:
-        first_name, last_name = row['ta_name'].split(' ', 1)
+        first_name, *last_name = row['ta_name'].split(' ')
+        if last_name:
+            last_name = ' '.join(last_name)
+        else:
+            last_name = '-'
         res = requests.patch(
             f'{sf_url}/services/data/v58.0/sobjects/Contact/ta_comp_id_email_idx__c/{comp_id}:{ta_email}',
             headers={
@@ -147,13 +151,15 @@ def main(log, reprocess_contact=None):
                 for k in ['ta_dateCreated', 'ta_dateUpdated']:
                     if row[k]:
                         row[k] = datetime.datetime.strptime(row[k], "%b %d, %Y, %I:%M:%S %p").strftime('%Y-%m-%dT%H:%M:%SZ')
-                if row['comp_id'] and row['ta_email']:
-                    if reprocess_contact and (reprocess_contact_comp_id != row['comp_id'] or reprocess_contact_ta_email != row['ta_email']):
+                comp_id = row['comp_id']
+                ta_email = row['ta_email']
+                if comp_id and ta_email:
+                    if reprocess_contact and (reprocess_contact_comp_id != comp_id or reprocess_contact_ta_email != ta_email):
                         continue
-                    sf_account_id = processed_companies_sf_ids[row['comp_id']]
+                    sf_account_id = processed_companies_sf_ids[comp_id]
                     assert sf_account_id, f'invalid sf_account_id: {row}'
-                    if (comp_id, row['ta_email']) in processed_comp_emails:
+                    if (comp_id, ta_email) in processed_comp_emails:
                         log(f'WARNING: duplicate ta_email: {row}')
                     else:
-                        processed_comp_emails.add((comp_id, row['ta_email']))
-                        process_contact(comp_id, row['ta_email'], row, sf_url, sf_token, sf_account_id, log)
+                        processed_comp_emails.add((comp_id, ta_email))
+                        process_contact(comp_id, ta_email, row, sf_url, sf_token, sf_account_id, log)
