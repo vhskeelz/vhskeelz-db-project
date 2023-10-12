@@ -1,6 +1,22 @@
 name: DB update
 on:
   workflow_dispatch:
+    inputs:
+      skip_db_update:
+        type: boolean
+        required: false
+        default: false
+        description: "Skip the DB update?"
+      skip_update_smoove:
+        type: boolean
+        required: false
+        default: false
+        description: "Skip the update smoove?"
+      skip_update_salesforce:
+        type: boolean
+        required: false
+        default: false
+        description: "Skip the update salesforce?"
   schedule:
     # Daily 00:22 (UTC) == 03:22 (Israel)
     - cron: '0 22 * * *'
@@ -8,6 +24,9 @@ env:
   PROCESSING_RECORD_ENABLED: "true"
   PROCESSING_RECORD_ID: ${{ github.run_id }}
   SERVICE_ACCOUNT_FILE: service_account.json
+  SKIP_DB_UPDATE: ${{ inputs.skip_db_update }}
+  SKIP_UPDATE_SMOOVE: ${{ inputs.skip_update_smoove }}
+  SKIP_UPDATE_SALESFORCE: ${{ inputs.skip_update_salesforce }}
 jobs:
   db_update:
     concurrency:
@@ -16,15 +35,21 @@ jobs:
     steps:
       - name: checkout
         uses: actions/checkout@v3
+        if: "! env.SKIP_DB_UPDATE"
       - name: setup vhskeelz-db
         uses: ./.github/actions/setup-vhskeelz-db
         with:
           selenium: "false"
           service_account_b64: ${{ secrets.SERVICE_ACCOUNT_B64 }}
+        if: "! env.SKIP_DB_UPDATE"
       - name: run load_data
         env:
           PROCESSING_RECORD_NAME: ${{ github.event_name }}-github_db_update-load-data
         run: poetry run vhskeelz-db load-data --extract
+        if: "! env.SKIP_DB_UPDATE"
+      - name: mock db update
+        if: env.SKIP_DB_UPDATE
+        run: echo "mock db update"
 
   update_smoove:
     needs:
@@ -35,15 +60,21 @@ jobs:
     steps:
       - name: checkout
         uses: actions/checkout@v3
+        if: "! env.SKIP_UPDATE_SMOOVE"
       - name: setup vhskeelz-db
         uses: ./.github/actions/setup-vhskeelz-db
         with:
           selenium: "false"
           service_account_b64: ${{ secrets.SERVICE_ACCOUNT_B64 }}
+        if: "! env.SKIP_UPDATE_SMOOVE"
       - name: run update-smoove-candidates-mailing-list
         env:
           PROCESSING_RECORD_NAME: ${{ github.event_name }}-github_db_update-update-smoove-candidates-mailing-list
         run: poetry run vhskeelz-db update-smoove-candidates-mailing-list
+        if: "! env.SKIP_UPDATE_SMOOVE"
+      - name: mock update smoove
+        if: env.SKIP_UPDATE_SMOOVE
+        run: echo "mock update smoove"
 
   update_salesforce:
     needs:
@@ -54,15 +85,21 @@ jobs:
     steps:
       - name: checkout
         uses: actions/checkout@v3
+        if: "! env.SKIP_UPDATE_SALESFORCE"
       - name: setup vhskeelz-db
         uses: ./.github/actions/setup-vhskeelz-db
         with:
           selenium: "false"
           service_account_b64: ${{ secrets.SERVICE_ACCOUNT_B64 }}
+        if: "! env.SKIP_UPDATE_SALESFORCE"
       - name: run update-salesforce-data
         env:
           PROCESSING_RECORD_NAME: ${{ github.event_name }}-github_db_update-update-salesforce-data
         run: poetry run vhskeelz-db update-salesforce-data
+        if: "! env.SKIP_UPDATE_SALESFORCE"
+      - name: mock update salesforce
+        if: env.SKIP_UPDATE_SALESFORCE
+        run: echo "mock update salesforce"
 
   final:
     needs: [update_smoove, update_salesforce]
