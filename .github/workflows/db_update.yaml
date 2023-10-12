@@ -24,9 +24,9 @@ env:
   PROCESSING_RECORD_ENABLED: "true"
   PROCESSING_RECORD_ID: ${{ github.run_id }}
   SERVICE_ACCOUNT_FILE: service_account.json
-  SKIP_DB_UPDATE: ${{ inputs.skip_db_update }}
-  SKIP_UPDATE_SMOOVE: ${{ inputs.skip_update_smoove }}
-  SKIP_UPDATE_SALESFORCE: ${{ inputs.skip_update_salesforce }}
+  SKIP_DB_UPDATE: ${{ inputs.skip_db_update || 'false' }}
+  SKIP_UPDATE_SMOOVE: ${{ inputs.skip_update_smoove || 'false' }}
+  SKIP_UPDATE_SALESFORCE: ${{ inputs.skip_update_salesforce || 'false' }}
 jobs:
   db_update:
     concurrency:
