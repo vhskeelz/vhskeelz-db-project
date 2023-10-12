@@ -76,7 +76,10 @@ def main(log, only_emails=None, limit=None, debug=False):
                 headers={'Authorization': f'Bearer {config.SMOOVE_API_KEY}'}
             )
             assert res.status_code == 202, f'unexpected status_code: {res.status_code} - {res.text}'
-            uuids[smoove_candidate['email']] = [res.json()]
+            res_json = res.json()
+            assert res_json.get('Uuid'), f'no Uuid in contacts create: {res_json}\n{smoove_candidate}'
+            assert res_json.get('Timestamp'), f'no Timestamp in contacts create: {res_json}\n{smoove_candidate}'
+            uuids[smoove_candidate['email']] = [res_json]
         except:
             log(f'failed to create: {smoove_candidate}')
             raise
@@ -91,7 +94,10 @@ def main(log, only_emails=None, limit=None, debug=False):
                 headers={'Authorization': f'Bearer {config.SMOOVE_API_KEY}'}
             )
             assert res.status_code == 202, f'unexpected status_code: {res.status_code} - {res.text}'
-            uuids[smoove_candidate['email']].append(res.json())
+            res_json = res.json()
+            assert res_json.get('Uuid'), f'no Uuid in contacts update: {res_json}\n{smoove_candidate}'
+            assert res_json.get('Timestamp'), f'no Timestamp in contacts update: {res_json}\n{smoove_candidate}'
+            uuids[smoove_candidate['email']].append(res_json)
         except:
             log(f'failed to update: {smoove_candidate}')
             raise
