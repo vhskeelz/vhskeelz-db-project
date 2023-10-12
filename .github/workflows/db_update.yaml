@@ -35,20 +35,20 @@ jobs:
     steps:
       - name: checkout
         uses: actions/checkout@v3
-        if: github.env.SKIP_DB_UPDATE != 'true'
+        if: env.SKIP_DB_UPDATE != 'true'
       - name: setup vhskeelz-db
         uses: ./.github/actions/setup-vhskeelz-db
         with:
           selenium: "false"
           service_account_b64: ${{ secrets.SERVICE_ACCOUNT_B64 }}
-        if: github.env.SKIP_DB_UPDATE != 'true'
+        if: env.SKIP_DB_UPDATE != 'true'
       - name: run load_data
         env:
           PROCESSING_RECORD_NAME: ${{ github.event_name }}-github_db_update-load-data
         run: poetry run vhskeelz-db load-data --extract
-        if: github.env.SKIP_DB_UPDATE != 'true'
+        if: env.SKIP_DB_UPDATE != 'true'
       - name: mock db update
-        if: github.env.SKIP_DB_UPDATE == 'true'
+        if: env.SKIP_DB_UPDATE == 'true'
         run: echo "mock db update"
 
   update_smoove:
@@ -60,20 +60,20 @@ jobs:
     steps:
       - name: checkout
         uses: actions/checkout@v3
-        if: github.env.SKIP_UPDATE_SMOOVE != 'true'
+        if: env.SKIP_UPDATE_SMOOVE != 'true'
       - name: setup vhskeelz-db
         uses: ./.github/actions/setup-vhskeelz-db
         with:
           selenium: "false"
           service_account_b64: ${{ secrets.SERVICE_ACCOUNT_B64 }}
-        if: github.env.SKIP_UPDATE_SMOOVE != 'true'
+        if: env.SKIP_UPDATE_SMOOVE != 'true'
       - name: run update-smoove-candidates-mailing-list
         env:
           PROCESSING_RECORD_NAME: ${{ github.event_name }}-github_db_update-update-smoove-candidates-mailing-list
         run: poetry run vhskeelz-db update-smoove-candidates-mailing-list
-        if: github.env.SKIP_UPDATE_SMOOVE != 'true'
+        if: env.SKIP_UPDATE_SMOOVE != 'true'
       - name: mock update smoove
-        if: github.env.SKIP_UPDATE_SMOOVE == 'true'
+        if: env.SKIP_UPDATE_SMOOVE == 'true'
         run: echo "mock update smoove"
 
   update_salesforce:
@@ -85,20 +85,20 @@ jobs:
     steps:
       - name: checkout
         uses: actions/checkout@v3
-        if: github.env.SKIP_UPDATE_SALESFORCE != 'true'
+        if: env.SKIP_UPDATE_SALESFORCE != 'true'
       - name: setup vhskeelz-db
         uses: ./.github/actions/setup-vhskeelz-db
         with:
           selenium: "false"
           service_account_b64: ${{ secrets.SERVICE_ACCOUNT_B64 }}
-        if: github.env.SKIP_UPDATE_SALESFORCE != 'true'
+        if: env.SKIP_UPDATE_SALESFORCE != 'true'
       - name: run update-salesforce-data
         env:
           PROCESSING_RECORD_NAME: ${{ github.event_name }}-github_db_update-update-salesforce-data
         run: poetry run vhskeelz-db update-salesforce-data
-        if: github.env.SKIP_UPDATE_SALESFORCE != 'true'
+        if: env.SKIP_UPDATE_SALESFORCE != 'true'
       - name: mock update salesforce
-        if: github.env.SKIP_UPDATE_SALESFORCE == 'true'
+        if: env.SKIP_UPDATE_SALESFORCE == 'true'
         run: echo "mock update salesforce"
 
   final:
