@@ -54,6 +54,13 @@ def iterate_candidates():
                 yield process_input_row(dict(row))
 
 
+def case_insensitive_get(d, key):
+    for k, v in d.items():
+        if k.lower() == key.lower():
+            return v
+    return None
+
+
 def main(log, only_emails=None, limit=None, debug=False):
     if only_emails:
         only_emails = [e.strip() for e in only_emails.split(',') if e.strip()]
@@ -77,8 +84,8 @@ def main(log, only_emails=None, limit=None, debug=False):
             )
             assert res.status_code == 202, f'unexpected status_code: {res.status_code} - {res.text}'
             res_json = res.json()
-            assert res_json.get('Uuid'), f'no Uuid in contacts create: {res_json}\n{smoove_candidate}'
-            assert res_json.get('Timestamp'), f'no Timestamp in contacts create: {res_json}\n{smoove_candidate}'
+            assert case_insensitive_get(res_json, 'Uuid'), f'no Uuid in contacts create: {res_json}\n{smoove_candidate}'
+            assert case_insensitive_get(res_json, 'Timestamp'), f'no Timestamp in contacts create: {res_json}\n{smoove_candidate}'
             uuids[smoove_candidate['email']] = [res_json]
         except:
             log(f'failed to create: {smoove_candidate}')
@@ -95,8 +102,8 @@ def main(log, only_emails=None, limit=None, debug=False):
             )
             assert res.status_code == 202, f'unexpected status_code: {res.status_code} - {res.text}'
             res_json = res.json()
-            assert res_json.get('Uuid'), f'no Uuid in contacts update: {res_json}\n{smoove_candidate}'
-            assert res_json.get('Timestamp'), f'no Timestamp in contacts update: {res_json}\n{smoove_candidate}'
+            assert case_insensitive_get(res_json, 'Uuid'), f'no Uuid in contacts update: {res_json}\n{smoove_candidate}'
+            assert case_insensitive_get(res_json, 'Timestamp'), f'no Timestamp in contacts update: {res_json}\n{smoove_candidate}'
             uuids[smoove_candidate['email']].append(res_json)
         except:
             log(f'failed to update: {smoove_candidate}')
@@ -115,7 +122,7 @@ def main(log, only_emails=None, limit=None, debug=False):
                 if update_res is not None:
                     num_updated += 1
                     res = requests_session.get(
-                        f'https://rest.smoove.io/v1/async/contacts/{update_res["Uuid"]}/{update_res["Timestamp"]}/status',
+                        f'https://rest.smoove.io/v1/async/contacts/{case_insensitive_get(update_res, "Uuid")}/{case_insensitive_get(update_res, "Timestamp")}/status',
                         headers={'Authorization': f'Bearer {config.SMOOVE_API_KEY}'}
                     )
                     assert res.status_code == 200, f'{email} - unexpected status_code: {res.status_code} - {res.text}'
