@@ -122,7 +122,7 @@ def main(log, only_emails=None, limit=None, debug=False):
                 if update_res is not None:
                     num_updated += 1
                     res = requests_session.get(
-                        f'https://rest.smoove.io/v1/async/contacts/{case_insensitive_get(update_res, "Uuid")}/{case_insensitive_get(update_res, "Timestamp")}/status',
+                        f'https://rest.smoove.io/v1/async/contacts/{case_insensitive_get(update_res, "Uuid")}/status',
                         headers={'Authorization': f'Bearer {config.SMOOVE_API_KEY}'}
                     )
                     assert res.status_code == 200, f'{email} - unexpected status_code: {res.status_code} - {res.text}'
