@@ -55,3 +55,6 @@ runs:
       with:
         name: ${{ inputs.artifacts_name }}
         path: .data/**
+    - name: prevent github from disabling the scheduled workflow due to inactivity
+      if: always()
+      uses: OriHoch/keepalive-workflow@master

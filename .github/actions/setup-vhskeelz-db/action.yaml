@@ -43,3 +43,6 @@ runs:
     - name: install python module and dependencies
       shell: bash
       run: poetry install
+    - name: prevent github from disabling the scheduled workflow due to inactivity
+      if: always()
+      uses: OriHoch/keepalive-workflow@master
