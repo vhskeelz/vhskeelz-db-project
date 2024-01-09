@@ -88,9 +88,9 @@ def login(log, driver):
     log("Start Login")
     WebDriverWait(driver, 10).until(EC.presence_of_element_located((By.XPATH, "//h2[contains(., 'לכניסת מגייסים')]"))).click()
     WebDriverWait(driver, 10).until(EC.presence_of_element_located((By.XPATH, "//button[contains(., 'הרשאת כניסה')]"))).click()
-    WebDriverWait(driver, 10).until(EC.presence_of_element_located((By.NAME, 'username'))).send_keys(config.SKEELZ_USERNAME)
-    WebDriverWait(driver, 10).until(EC.presence_of_element_located((By.NAME, 'password'))).send_keys(config.SKEELZ_PASSWORD)
-    WebDriverWait(driver, 10).until(EC.presence_of_element_located((By.ID, "okta-signin-submit"))).click()
+    WebDriverWait(driver, 10).until(EC.presence_of_element_located((By.NAME, 'identifier'))).send_keys(config.SKEELZ_USERNAME)
+    WebDriverWait(driver, 10).until(EC.presence_of_element_located((By.NAME, 'credentials.passcode'))).send_keys(config.SKEELZ_PASSWORD)
+    WebDriverWait(driver, 10).until(EC.presence_of_element_located((By.CSS_SELECTOR, "input[type='submit']"))).click()
     log("Login OK")
 
 
