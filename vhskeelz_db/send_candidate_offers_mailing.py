@@ -215,9 +215,10 @@ def get_mail_data(grouped_rows, mailing_type, log):
                 if not download_position_candidate_cv.download_from_gcs(f'cv/{row["position_id"]}_{row["candidate_id"]}.pdf', cv_filename):
                     cv_filename = None
                 position_candidate_ids.add((row['position_id'], row['candidate_id']))
+                candidate_email = row[get_email_field(mailing_type)]
                 data.append({
                     "from_email": from_email,
-                    "to_emails": row[get_email_field(mailing_type)],
+                    "to_emails": candidate_email,
                     "template_id": template_id,
                     "pdf_attachment_filename": cv_filename,
                     'pdf_attachment_name': f"{row['candidate_name']} - {row['position_name']}.pdf",
@@ -228,6 +229,7 @@ def get_mail_data(grouped_rows, mailing_type, log):
                         "city": row['city'] if row['city'] != 'null' else '-',
                         "details_url": config.CANDIDATE_POSITION_CV_URL_TEMPLATE.format(position_id=row['position_id'], candidate_id=row['candidate_id']),
                         "candidate_name": row['candidate_name'],
+                        'candidate_email': candidate_email,
                     },
                     'candidate_position_ids': [[row['candidate_id'], row['position_id']]]
                 })
