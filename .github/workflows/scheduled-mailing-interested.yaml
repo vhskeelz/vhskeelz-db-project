@@ -1,10 +1,9 @@
 name: Scheduled mailing - interested
 on:
   workflow_dispatch:
-# disabled for now due to problem with getting cv pdfs
-#  schedule:
+  schedule:
     # Every day at 06:13 (UTC) == 09:13 (Israel)
-#    - cron: '13 6 * * *'
+    - cron: '13 6 * * *'
 jobs:
   scheduled_mailing_interested:
     concurrency:
