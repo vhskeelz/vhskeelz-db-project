@@ -124,7 +124,8 @@ def update_smoove_candidates_mailing_list(**kwargs):
 
 
 @main.command()
-@click.option('--reprocess-contact')
+@click.option('--skip-companies', is_flag=True)
+@click.option('--skip-candidates', is_flag=True)
 def update_salesforce_data(**kwargs):
     from . import update_salesforce_data
     with processing_record() as log:
