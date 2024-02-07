@@ -9,12 +9,12 @@ import requests
 from . import config, db
 
 CANDIDATE_CONTACT_SF_FIELDS = {
-    "AccountId": {'lambda': lambda v: config.SALESFORCE_CANDIDATES_ACCOUNT_ID},
+    "AccountId": {'lambda': lambda row: config.SALESFORCE_CANDIDATES_ACCOUNT_ID},
     "FirstName": {'db_field': 'first_name'},
     "LastName": {'db_field': 'last_name', 'required': True, 'default': '-'},
     "Email": {'db_field': 'email', 'required': True},
     "Candidate_id__c": {'db_field': 'candidate_id', 'required': True},
-    "Gender__c": {'db_field': 'gender', 'lambda': lambda v: v if v in ('Male', 'Female') else ''},
+    "Gender__c": {'db_field': 'gender', 'lambda': lambda row: row['gender'] if row['gender'] in ('Male', 'Female') else ''},
     "City_c__c": {'db_field': "location"},
     "MobilePhone": {'db_field': 'phone_number'},
 }
@@ -36,7 +36,17 @@ COMPANY_ACCOUNT_SF_FIELDS = {
     # "comp_industry__c": {},
     # "comp_region__c": {},
     # "comp_status__c": {},
+}
 
+POSITION_CASE_SF_FIELDS = {
+    "City__c": {'db_field': 'city'},
+    "Description": {'db_field': 'position_description'},
+    "Subject": {'db_field': 'position_name'},
+    # "actice__c": {'db_field': 'status'},
+    "employmentType__c": {'db_field': 'employmentType'},
+    "hiringUser__c": {'db_field': 'hiringUser'},
+    "positionType__c": {'db_field': 'positionType'},
+    "Position_id__c": {'db_field': 'position_id', 'required': True},
 }
 
 
@@ -136,8 +146,13 @@ def parameterized_search(data, sf_url, sf_token):
         headers={'Authorization': f'Bearer {sf_token}', 'Content-Type': 'application/json', },
         json=data
     )
-    res.raise_for_status()
-    return res.json()['searchRecords']
+    try:
+        res.raise_for_status()
+        return res.json()['searchRecords']
+    except Exception as e:
+        raise Exception(res.text) from e
+
+
 
 
 def update_candidate_contacts(conn, sf_url, sf_token, log):
@@ -151,7 +166,6 @@ def update_candidate_contacts(conn, sf_url, sf_token, log):
             sf_id = candidate_ids_sf_ids[candidate_id]
         else:
             existing_contacts = list(parameterized_search({
-                'q': candidate_id,
                 "sobjects": [{
                     "name": "Contact",
                     "fields": ["Id", *CANDIDATE_CONTACT_SF_FIELDS.keys()],
@@ -167,6 +181,46 @@ def update_candidate_contacts(conn, sf_url, sf_token, log):
             action, sf_id = upsert_object('Contact', f'Id/{sf_id}', contact_data, sf_url, sf_token)
         update_vhskeelz_id_sf_id(conn, 'candidate_contact', candidate_id, sf_id, candidate_ids_sf_ids)
         log(f'candidate_id {row["candidate_id"]}: {action} ({sf_id})')
+
+
+def update_position_cases(conn, sf_url, sf_token, log):
+    sql_fields = ','.join([
+        ('"' + conf['db_field'] + '"')
+        for conf in POSITION_CASE_SF_FIELDS.values()
+        if conf.get('db_field')
+    ])
+    with conn.begin():
+        position_ids_sf_ids = get_vhskeelz_ids_salesforce_ids(conn, 'position_case')
+        rows = list(conn.execute(f'''
+            WITH RankedItems AS (SELECT {sql_fields}, ROW_NUMBER() OVER(PARTITION BY "position_id") AS rn FROM vehadarta_positions_skills)
+            SELECT {sql_fields} FROM RankedItems WHERE rn = 1;
+        '''))
+    for row in rows:
+        row, case_data = preprocess_row(row, POSITION_CASE_SF_FIELDS, log)
+        position_id = row['position_id']
+        if position_id in position_ids_sf_ids:
+            sf_id = position_ids_sf_ids[position_id]
+        else:
+            existing_cases = list(parameterized_search({
+                'q': row['position_name'],
+                "sobjects": [{
+                    "name": "Case",
+                    "fields": ["Id", *POSITION_CASE_SF_FIELDS.keys()],
+                    "where": f"Position_id__c='{position_id}'"
+                }],
+            }, sf_url, sf_token))
+            assert len(existing_cases) <= 1, f'Too many existing cases for position_id {position_id}: {existing_cases}'
+            if len(existing_cases):
+                sf_id = existing_cases[0]['Id']
+            else:
+                sf_id = None
+        if not sf_id:
+            sf_id = create_object('Case', case_data, sf_url, sf_token)
+            action = 'created'
+        else:
+            action, sf_id = upsert_object('Case', f'Id/{sf_id}', case_data, sf_url, sf_token)
+        update_vhskeelz_id_sf_id(conn, 'position_case', position_id, sf_id, position_ids_sf_ids)
+        log(f'position_id {position_id}: {action} ({sf_id})')
 
 
 def update_company_accounts(conn, sf_url, sf_token, log):
@@ -190,7 +244,6 @@ def update_company_accounts(conn, sf_url, sf_token, log):
             ]:
                 vhskeelz_api_cmt_account_id = None
                 for account in parameterized_search({
-                    'q': search_value,
                     "sobjects": [{
                         "name": "Account",
                         "fields": ["Id", *COMPANY_ACCOUNT_SF_FIELDS.keys(), 'vhskeelz_api_cmt__c'],
@@ -237,7 +290,7 @@ def preprocess_row(row, sf_fields_confs=None, log=None):
                     else:
                         raise Exception(msg)
         sf_data = {
-            sf_field: conf.get('lambda', lambda v: v)(row.get(conf.get('db_field')))
+            sf_field: conf.get('lambda', lambda r: r.get(conf.get('db_field')))(row)
             for sf_field, conf
             in sf_fields_confs.items()
         }
@@ -246,7 +299,7 @@ def preprocess_row(row, sf_fields_confs=None, log=None):
         return row
 
 
-def main(log, skip_companies=False, skip_candidates=False):
+def main(log, skip_companies=False, skip_candidates=False, skip_positions=False):
     sf_url, sf_token = salesforce_login()
     with db.get_db_engine().connect() as conn:
         create_table(conn)
@@ -254,3 +307,5 @@ def main(log, skip_companies=False, skip_candidates=False):
             update_company_accounts(conn, sf_url, sf_token, log)
         if not skip_candidates:
             update_candidate_contacts(conn, sf_url, sf_token, log)
+        if not skip_positions:
+            update_position_cases(conn, sf_url, sf_token, log)
