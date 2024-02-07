@@ -140,19 +140,17 @@ def create_object(object_name, data, sf_url, sf_token):
         raise Exception(res.text) from e
 
 
-def parameterized_search(data, sf_url, sf_token):
-    res = requests.post(
-        f'{sf_url}/services/data/v60.0/parameterizedSearch',
-        headers={'Authorization': f'Bearer {sf_token}', 'Content-Type': 'application/json', },
-        json=data
+def soql_query(soql, sf_url, sf_token):
+    res = requests.get(
+        f'{sf_url}/services/data/v60.0/query',
+        params={'q': soql},
+        headers={'Authorization': f'Bearer {sf_token}', 'Content-Type': 'application/json', }
     )
     try:
         res.raise_for_status()
-        return res.json()['searchRecords']
+        return res.json()['records']
     except Exception as e:
-        raise Exception(res.text) from e
-
-
+        raise Exception(f'{res.text}\n\nsoql=\n{soql}') from e
 
 
 def update_candidate_contacts(conn, sf_url, sf_token, log):
@@ -165,13 +163,7 @@ def update_candidate_contacts(conn, sf_url, sf_token, log):
         if candidate_id in candidate_ids_sf_ids:
             sf_id = candidate_ids_sf_ids[candidate_id]
         else:
-            existing_contacts = list(parameterized_search({
-                "sobjects": [{
-                    "name": "Contact",
-                    "fields": ["Id", *CANDIDATE_CONTACT_SF_FIELDS.keys()],
-                    "where": f"Candidate_id__c='{candidate_id}'"
-                }],
-            }, sf_url, sf_token))
+            existing_contacts = list(soql_query("SELECT Id FROM Contact WHERE Candidate_id__c='{candidate_id}'", sf_url, sf_token))
             assert len(existing_contacts) <= 1, f'Too many existing contacts for candidate_id {candidate_id}: {existing_contacts}'
             sf_id = existing_contacts[0]['Id']
         if not sf_id:
@@ -201,14 +193,7 @@ def update_position_cases(conn, sf_url, sf_token, log):
         if position_id in position_ids_sf_ids:
             sf_id = position_ids_sf_ids[position_id]
         else:
-            existing_cases = list(parameterized_search({
-                'q': row['position_name'],
-                "sobjects": [{
-                    "name": "Case",
-                    "fields": ["Id", *POSITION_CASE_SF_FIELDS.keys()],
-                    "where": f"Position_id__c='{position_id}'"
-                }],
-            }, sf_url, sf_token))
+            existing_cases = list(soql_query(f"SELECT Id FROM Case WHERE Position_id__c='{position_id}'", sf_url, sf_token))
             assert len(existing_cases) <= 1, f'Too many existing cases for position_id {position_id}: {existing_cases}'
             if len(existing_cases):
                 sf_id = existing_cases[0]['Id']
@@ -233,46 +218,50 @@ def update_company_accounts(conn, sf_url, sf_token, log):
     for row in rows:
         row, account_data = preprocess_row(row, COMPANY_ACCOUNT_SF_FIELDS, log)
         company_name, company_id = row['company_name'], row['companyId']
-        if company_id in company_ids_sf_ids:
-            sf_id = company_ids_sf_ids[company_id]
-        else:
-            existing_sf_ids = []
-            for search_field, search_value in [
-                ('Company_id__c', company_id),
-                ('comp_id__c', company_id),
-                ('Name', company_name),
-            ]:
-                vhskeelz_api_cmt_account_id = None
-                for account in parameterized_search({
-                    "sobjects": [{
-                        "name": "Account",
-                        "fields": ["Id", *COMPANY_ACCOUNT_SF_FIELDS.keys(), 'vhskeelz_api_cmt__c'],
-                        'where': f"{search_field}='{search_value}'",
-                    }],
-                }, sf_url, sf_token):
-                    if account['vhskeelz_api_cmt__c'] == '{"managed_by_api": 2}':
-                        assert not vhskeelz_api_cmt_account_id, f'multiple vhskeelz_api_cmt accounts for company {company_id}'
-                        vhskeelz_api_cmt_account_id = account['Id']
-                    if account['Id'] not in existing_sf_ids:
-                        existing_sf_ids.append(account['Id'])
-            if len(existing_sf_ids) > 1:
-                if vhskeelz_api_cmt_account_id:
-                    log(f'WARNING: Too many existing accounts, will use the api cmt account. company_id {company_id}: {vhskeelz_api_cmt_account_id}')
-                    sf_id = vhskeelz_api_cmt_account_id
-                else:
-                    log(f'WARNING: Too many existing accounts, will use the first one. company_id {company_id}: {existing_sf_ids}')
-                    sf_id = existing_sf_ids[0]
-            elif len(existing_sf_ids) == 1:
-                sf_id = existing_sf_ids[0]
+        if company_id != '11ede734-696a-dc80-9fc2-d177ac38962b':
+            continue
+        try:
+            if company_id in company_ids_sf_ids:
+                sf_id = company_ids_sf_ids[company_id]
             else:
-                sf_id = None
-        if not sf_id:
-            sf_id = create_object('Account', account_data, sf_url, sf_token)
-            action = 'created'
-        else:
-            action, sf_id = upsert_object('Account', f'Id/{sf_id}', account_data, sf_url, sf_token)
-        update_vhskeelz_id_sf_id(conn, 'company_account', company_id, sf_id, company_ids_sf_ids)
-        log(f'company_id {company_id}: {action} ({sf_id})')
+                existing_sf_ids = []
+                for search_field, search_value in [
+                    ('Company_id__c', company_id),
+                    ('comp_id__c', company_id),
+                    ('Name', company_name),
+                ]:
+                    vhskeelz_api_cmt_account_id = None
+                    for account in soql_query('''
+                        SELECT Id, vhskeelz_api_cmt__c FROM Account WHERE {search_field}='{search_value}'
+                    '''.format(
+                        search_field=search_field,
+                        search_value=search_value.replace("'", "\\'")
+                    ), sf_url, sf_token):
+                        if account['vhskeelz_api_cmt__c'] == '{"managed_by_api": 2}':
+                            assert not vhskeelz_api_cmt_account_id, f'multiple vhskeelz_api_cmt accounts for company {company_id}'
+                            vhskeelz_api_cmt_account_id = account['Id']
+                        if account['Id'] not in existing_sf_ids:
+                            existing_sf_ids.append(account['Id'])
+                if len(existing_sf_ids) > 1:
+                    if vhskeelz_api_cmt_account_id:
+                        log(f'WARNING: Too many existing accounts, will use the api cmt account. company_id {company_id}: {vhskeelz_api_cmt_account_id}')
+                        sf_id = vhskeelz_api_cmt_account_id
+                    else:
+                        log(f'WARNING: Too many existing accounts, will use the first one. company_id {company_id}: {existing_sf_ids}')
+                        sf_id = existing_sf_ids[0]
+                elif len(existing_sf_ids) == 1:
+                    sf_id = existing_sf_ids[0]
+                else:
+                    sf_id = None
+            if not sf_id:
+                sf_id = create_object('Account', account_data, sf_url, sf_token)
+                action = 'created'
+            else:
+                action, sf_id = upsert_object('Account', f'Id/{sf_id}', account_data, sf_url, sf_token)
+            update_vhskeelz_id_sf_id(conn, 'company_account', company_id, sf_id, company_ids_sf_ids)
+            log(f'company_id {company_id}: {action} ({sf_id})')
+        except Exception as e:
+            raise Exception(f'Failed to process company_id {company_id}') from e
 
 
 def preprocess_row(row, sf_fields_confs=None, log=None):
