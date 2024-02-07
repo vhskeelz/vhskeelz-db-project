@@ -165,7 +165,7 @@ def update_candidate_contacts(conn, sf_url, sf_token, log):
         else:
             existing_contacts = list(soql_query("SELECT Id FROM Contact WHERE Candidate_id__c='{candidate_id}'", sf_url, sf_token))
             assert len(existing_contacts) <= 1, f'Too many existing contacts for candidate_id {candidate_id}: {existing_contacts}'
-            sf_id = existing_contacts[0]['Id']
+            sf_id = existing_contacts[0]['Id'] if len(existing_contacts) > 0 else None
         if not sf_id:
             sf_id = create_object('Contact', contact_data, sf_url, sf_token)
             action = 'created'
@@ -218,8 +218,6 @@ def update_company_accounts(conn, sf_url, sf_token, log):
     for row in rows:
         row, account_data = preprocess_row(row, COMPANY_ACCOUNT_SF_FIELDS, log)
         company_name, company_id = row['company_name'], row['companyId']
-        if company_id != '11ede734-696a-dc80-9fc2-d177ac38962b':
-            continue
         try:
             if company_id in company_ids_sf_ids:
                 sf_id = company_ids_sf_ids[company_id]
