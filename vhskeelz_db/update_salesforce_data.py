@@ -47,7 +47,22 @@ POSITION_CASE_SF_FIELDS = {
     "hiringUser__c": {'db_field': 'hiringUser'},
     "positionType__c": {'db_field': 'positionType'},
     "Position_id__c": {'db_field': 'position_id', 'required': True},
+    'RecordTypeId': {'lambda': lambda row: config.SALESFORCE_CASE_RECORD_TYPE_ID}
 }
+
+
+class SalesforceException(Exception):
+
+    def __init__(self, msg, res_text=None):
+        super().__init__(msg)
+        self.res_text = res_text if res_text else msg
+
+    def parse_res_text(self):
+        try:
+            return json.loads(self.res_text)
+        except:
+            pass
+        return None
 
 
 def create_table(conn):
@@ -137,7 +152,7 @@ def create_object(object_name, data, sf_url, sf_token):
         assert res.json()['success']
         return res.json()['id']
     except Exception as e:
-        raise Exception(res.text) from e
+        raise SalesforceException(res.text) from e
 
 
 def soql_query(soql, sf_url, sf_token):
@@ -160,19 +175,30 @@ def update_candidate_contacts(conn, sf_url, sf_token, log):
     for row in rows:
         row, contact_data = preprocess_row(row, CANDIDATE_CONTACT_SF_FIELDS, log)
         candidate_id = row['candidate_id']
-        if candidate_id in candidate_ids_sf_ids:
-            sf_id = candidate_ids_sf_ids[candidate_id]
-        else:
-            existing_contacts = list(soql_query("SELECT Id FROM Contact WHERE Candidate_id__c='{candidate_id}'", sf_url, sf_token))
-            assert len(existing_contacts) <= 1, f'Too many existing contacts for candidate_id {candidate_id}: {existing_contacts}'
-            sf_id = existing_contacts[0]['Id'] if len(existing_contacts) > 0 else None
-        if not sf_id:
-            sf_id = create_object('Contact', contact_data, sf_url, sf_token)
-            action = 'created'
-        else:
-            action, sf_id = upsert_object('Contact', f'Id/{sf_id}', contact_data, sf_url, sf_token)
-        update_vhskeelz_id_sf_id(conn, 'candidate_contact', candidate_id, sf_id, candidate_ids_sf_ids)
-        log(f'candidate_id {row["candidate_id"]}: {action} ({sf_id})')
+        try:
+            if candidate_id in candidate_ids_sf_ids:
+                sf_id = candidate_ids_sf_ids[candidate_id]
+            else:
+                existing_contacts = list(soql_query("SELECT Id FROM Contact WHERE Candidate_id__c='{candidate_id}'", sf_url, sf_token))
+                assert len(existing_contacts) <= 1, f'Too many existing contacts for candidate_id {candidate_id}: {existing_contacts}'
+                sf_id = existing_contacts[0]['Id'] if len(existing_contacts) > 0 else None
+            if not sf_id:
+                sf_id = create_object('Contact', contact_data, sf_url, sf_token)
+                action = 'created'
+            else:
+                action, sf_id = upsert_object('Contact', f'Id/{sf_id}', contact_data, sf_url, sf_token)
+            update_vhskeelz_id_sf_id(conn, 'candidate_contact', candidate_id, sf_id, candidate_ids_sf_ids)
+            log(f'candidate_id {row["candidate_id"]}: {action} ({sf_id})')
+        except Exception as e:
+            ok = False
+            if isinstance(e, SalesforceException):
+                res = e.parse_res_text()
+                if res and isinstance(res, list) and len(res) == 1 and isinstance(res[0], dict):
+                    if res[0].get('errorCode') == 'INVALID_EMAIL_ADDRESS':
+                        ok = True
+                        log(f'WARNING failed to update candidate_id {candidate_id} invalid email: {row["email"]}')
+            if not ok:
+                raise Exception(f'Failed to update candidate_id {candidate_id}') from e
 
 
 def update_position_cases(conn, sf_url, sf_token, log):
@@ -190,22 +216,25 @@ def update_position_cases(conn, sf_url, sf_token, log):
     for row in rows:
         row, case_data = preprocess_row(row, POSITION_CASE_SF_FIELDS, log)
         position_id = row['position_id']
-        if position_id in position_ids_sf_ids:
-            sf_id = position_ids_sf_ids[position_id]
-        else:
-            existing_cases = list(soql_query(f"SELECT Id FROM Case WHERE Position_id__c='{position_id}'", sf_url, sf_token))
-            assert len(existing_cases) <= 1, f'Too many existing cases for position_id {position_id}: {existing_cases}'
-            if len(existing_cases):
-                sf_id = existing_cases[0]['Id']
+        try:
+            if position_id in position_ids_sf_ids:
+                sf_id = position_ids_sf_ids[position_id]
             else:
-                sf_id = None
-        if not sf_id:
-            sf_id = create_object('Case', case_data, sf_url, sf_token)
-            action = 'created'
-        else:
-            action, sf_id = upsert_object('Case', f'Id/{sf_id}', case_data, sf_url, sf_token)
-        update_vhskeelz_id_sf_id(conn, 'position_case', position_id, sf_id, position_ids_sf_ids)
-        log(f'position_id {position_id}: {action} ({sf_id})')
+                existing_cases = list(soql_query(f"SELECT Id FROM Case WHERE Position_id__c='{position_id}'", sf_url, sf_token))
+                assert len(existing_cases) <= 1, f'Too many existing cases for position_id {position_id}: {existing_cases}'
+                if len(existing_cases):
+                    sf_id = existing_cases[0]['Id']
+                else:
+                    sf_id = None
+            if not sf_id:
+                sf_id = create_object('Case', case_data, sf_url, sf_token)
+                action = 'created'
+            else:
+                action, sf_id = upsert_object('Case', f'Id/{sf_id}', case_data, sf_url, sf_token)
+            update_vhskeelz_id_sf_id(conn, 'position_case', position_id, sf_id, position_ids_sf_ids)
+            log(f'position_id {position_id}: {action} ({sf_id})')
+        except Exception as e:
+            raise Exception(f'Failed to update position_id {position_id}') from e
 
 
 def update_company_accounts(conn, sf_url, sf_token, log):
@@ -269,13 +298,12 @@ def preprocess_row(row, sf_fields_confs=None, log=None):
         for conf in sf_fields_confs.values():
             if conf.get('required'):
                 if not row[conf['db_field']]:
-                    msg = f'Missing required field {conf["db_field"]} in row: {row}'
+                    msg = f'Missing required field {conf["db_field"]}'
                     if conf.get('default'):
-                        log(msg)
-                        log(f'Setting value to {conf["default"]}')
+                        log(f'WARNING {msg}, setting value to "{conf["default"]}" ({row})')
                         row[conf['db_field']] = conf['default']
                     else:
-                        raise Exception(msg)
+                        raise Exception(f'{msg} ({row})')
         sf_data = {
             sf_field: conf.get('lambda', lambda r: r.get(conf.get('db_field')))(row)
             for sf_field, conf
