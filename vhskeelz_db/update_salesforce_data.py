@@ -1,7 +1,7 @@
 import json
 import time
 import base64
-import datetime
+import hashlib
 
 import jwt
 import requests
@@ -73,7 +73,8 @@ def create_table(conn):
                 salesforce_id varchar(255),
                 vhskeelz_id varchar(255),
                 created_at timestamp,
-                updated_at timestamp
+                updated_at timestamp,
+                data_hash varchar(64)
             );
             create index if not exists salesforce_objects_object_type_idx on salesforce_objects (object_type);
             create index if not exists salesforce_objects_salesforce_id_idx on salesforce_objects (salesforce_id);
@@ -83,22 +84,22 @@ def create_table(conn):
 
 def get_vhskeelz_ids_salesforce_ids(conn, object_type):
     return {
-        row['vhskeelz_id']: row['salesforce_id']
-        for row in conn.execute(f"select salesforce_id, vhskeelz_id from salesforce_objects where object_type = '{object_type}'")
+        row['vhskeelz_id']: (row['salesforce_id'], row['data_hash'])
+        for row in conn.execute(f"select salesforce_id, vhskeelz_id, data_hash from salesforce_objects where object_type = '{object_type}'")
     }
 
 
-def update_vhskeelz_id_sf_id(conn, object_type, vhskeelz_id, sf_id, vhskeelz_ids_salesforce_ids):
+def update_vhskeelz_id_sf_id(conn, object_type, vhskeelz_id, sf_id, vhskeelz_ids_salesforce_ids, data_hash):
     with conn.begin() as txn:
         if vhskeelz_id not in vhskeelz_ids_salesforce_ids:
             conn.execute(f"""
-                insert into salesforce_objects (object_type, salesforce_id, vhskeelz_id, created_at, updated_at)
-                values ('{object_type}', '{sf_id}', '{vhskeelz_id}', now(), now())
+                insert into salesforce_objects (object_type, salesforce_id, vhskeelz_id, created_at, updated_at, data_hash)
+                values ('{object_type}', '{sf_id}', '{vhskeelz_id}', now(), now(), '{data_hash}')
             """)
         else:
-            assert sf_id == vhskeelz_ids_salesforce_ids[vhskeelz_id]
+            assert sf_id == vhskeelz_ids_salesforce_ids[vhskeelz_id][0]
             conn.execute(f"""
-                update salesforce_objects set updated_at = now() where object_type = '{object_type}' and salesforce_id = '{sf_id}' and vhskeelz_id = '{vhskeelz_id}';
+                update salesforce_objects set updated_at = now(), data_hash = '{data_hash}' where object_type = '{object_type}' and salesforce_id = '{sf_id}' and vhskeelz_id = '{vhskeelz_id}';
             """)
         txn.commit()
 
@@ -121,18 +122,26 @@ def salesforce_login():
     return res['instance_url'], res['access_token']
 
 
-def upsert_object(object_name, key_spec, data, sf_url, sf_token):
-    res = requests.patch(
-        f'{sf_url}/services/data/v58.0/sobjects/{object_name}/{key_spec}',
-        headers={'Authorization': f'Bearer {sf_token}', 'Content-Type': 'application/json', },
-        json=data
-    )
-    if res.status_code == 200:
-        return 'updated', res.json()['id']
-    elif res.status_code == 201:
-        return 'created', res.json()['id']
+def get_data_hash(data):
+    return hashlib.sha256(json.dumps(data, sort_keys=True).encode()).hexdigest()
+
+
+def upsert_object(object_name, key_spec, data, sf_url, sf_token, existing_sf_id, existing_data_hash):
+    data_hash = get_data_hash(data)
+    if data_hash == existing_data_hash:
+        return 'unchanged', existing_sf_id, existing_data_hash
     else:
-        raise Exception(f"Unexpected status_code: {res.status_code}\n{res.content}")
+        res = requests.patch(
+            f'{sf_url}/services/data/v58.0/sobjects/{object_name}/{key_spec}',
+            headers={'Authorization': f'Bearer {sf_token}', 'Content-Type': 'application/json', },
+            json=data
+        )
+        if res.status_code == 200:
+            return 'updated', res.json()['id'], data_hash
+        elif res.status_code == 201:
+            return 'created', res.json()['id'], data_hash
+        else:
+            raise Exception(f"Unexpected status_code: {res.status_code}\n{res.content}")
 
 
 def remove_object(object_name, key_spec, sf_url, sf_token):
@@ -150,7 +159,7 @@ def create_object(object_name, data, sf_url, sf_token):
     )
     try:
         assert res.json()['success']
-        return res.json()['id']
+        return res.json()['id'], get_data_hash(data)
     except Exception as e:
         raise SalesforceException(res.text) from e
 
@@ -177,17 +186,17 @@ def update_candidate_contacts(conn, sf_url, sf_token, log):
         candidate_id = row['candidate_id']
         try:
             if candidate_id in candidate_ids_sf_ids:
-                sf_id = candidate_ids_sf_ids[candidate_id]
+                sf_id = candidate_ids_sf_ids[candidate_id][0]
             else:
                 existing_contacts = list(soql_query("SELECT Id FROM Contact WHERE Candidate_id__c='{candidate_id}'", sf_url, sf_token))
                 assert len(existing_contacts) <= 1, f'Too many existing contacts for candidate_id {candidate_id}: {existing_contacts}'
                 sf_id = existing_contacts[0]['Id'] if len(existing_contacts) > 0 else None
             if not sf_id:
-                sf_id = create_object('Contact', contact_data, sf_url, sf_token)
+                sf_id, data_hash = create_object('Contact', contact_data, sf_url, sf_token)
                 action = 'created'
             else:
-                action, sf_id = upsert_object('Contact', f'Id/{sf_id}', contact_data, sf_url, sf_token)
-            update_vhskeelz_id_sf_id(conn, 'candidate_contact', candidate_id, sf_id, candidate_ids_sf_ids)
+                action, sf_id, data_hash = upsert_object('Contact', f'Id/{sf_id}', contact_data, sf_url, sf_token, *candidate_ids_sf_ids[candidate_id])
+            update_vhskeelz_id_sf_id(conn, 'candidate_contact', candidate_id, sf_id, candidate_ids_sf_ids, data_hash)
             log(f'candidate_id {row["candidate_id"]}: {action} ({sf_id})')
         except Exception as e:
             ok = False
@@ -218,7 +227,7 @@ def update_position_cases(conn, sf_url, sf_token, log):
         position_id = row['position_id']
         try:
             if position_id in position_ids_sf_ids:
-                sf_id = position_ids_sf_ids[position_id]
+                sf_id = position_ids_sf_ids[position_id][0]
             else:
                 existing_cases = list(soql_query(f"SELECT Id FROM Case WHERE Position_id__c='{position_id}'", sf_url, sf_token))
                 assert len(existing_cases) <= 1, f'Too many existing cases for position_id {position_id}: {existing_cases}'
@@ -227,11 +236,11 @@ def update_position_cases(conn, sf_url, sf_token, log):
                 else:
                     sf_id = None
             if not sf_id:
-                sf_id = create_object('Case', case_data, sf_url, sf_token)
+                sf_id, data_hash = create_object('Case', case_data, sf_url, sf_token)
                 action = 'created'
             else:
-                action, sf_id = upsert_object('Case', f'Id/{sf_id}', case_data, sf_url, sf_token)
-            update_vhskeelz_id_sf_id(conn, 'position_case', position_id, sf_id, position_ids_sf_ids)
+                action, sf_id, data_hash = upsert_object('Case', f'Id/{sf_id}', case_data, sf_url, sf_token, *position_ids_sf_ids[position_id])
+            update_vhskeelz_id_sf_id(conn, 'position_case', position_id, sf_id, position_ids_sf_ids, data_hash)
             log(f'position_id {position_id}: {action} ({sf_id})')
         except Exception as e:
             raise Exception(f'Failed to update position_id {position_id}') from e
@@ -249,7 +258,7 @@ def update_company_accounts(conn, sf_url, sf_token, log):
         company_name, company_id = row['company_name'], row['companyId']
         try:
             if company_id in company_ids_sf_ids:
-                sf_id = company_ids_sf_ids[company_id]
+                sf_id = company_ids_sf_ids[company_id][0]
             else:
                 existing_sf_ids = []
                 for search_field, search_value in [
@@ -281,11 +290,11 @@ def update_company_accounts(conn, sf_url, sf_token, log):
                 else:
                     sf_id = None
             if not sf_id:
-                sf_id = create_object('Account', account_data, sf_url, sf_token)
+                sf_id, data_hash = create_object('Account', account_data, sf_url, sf_token)
                 action = 'created'
             else:
-                action, sf_id = upsert_object('Account', f'Id/{sf_id}', account_data, sf_url, sf_token)
-            update_vhskeelz_id_sf_id(conn, 'company_account', company_id, sf_id, company_ids_sf_ids)
+                action, sf_id, data_hash = upsert_object('Account', f'Id/{sf_id}', account_data, sf_url, sf_token, *company_ids_sf_ids[company_id])
+            update_vhskeelz_id_sf_id(conn, 'company_account', company_id, sf_id, company_ids_sf_ids, data_hash)
             log(f'company_id {company_id}: {action} ({sf_id})')
         except Exception as e:
             raise Exception(f'Failed to process company_id {company_id}') from e
