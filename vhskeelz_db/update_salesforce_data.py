@@ -191,6 +191,8 @@ def update_candidate_contacts(conn, sf_url, sf_token, log):
                 existing_contacts = list(soql_query("SELECT Id FROM Contact WHERE Candidate_id__c='{candidate_id}'", sf_url, sf_token))
                 assert len(existing_contacts) <= 1, f'Too many existing contacts for candidate_id {candidate_id}: {existing_contacts}'
                 sf_id = existing_contacts[0]['Id'] if len(existing_contacts) > 0 else None
+                if sf_id:
+                    candidate_ids_sf_ids[candidate_id] = (sf_id, None)
             if not sf_id:
                 sf_id, data_hash = create_object('Contact', contact_data, sf_url, sf_token)
                 action = 'created'
@@ -235,6 +237,8 @@ def update_position_cases(conn, sf_url, sf_token, log):
                     sf_id = existing_cases[0]['Id']
                 else:
                     sf_id = None
+                if sf_id:
+                    position_ids_sf_ids[position_id] = (sf_id, None)
             if not sf_id:
                 sf_id, data_hash = create_object('Case', case_data, sf_url, sf_token)
                 action = 'created'
@@ -289,6 +293,8 @@ def update_company_accounts(conn, sf_url, sf_token, log):
                     sf_id = existing_sf_ids[0]
                 else:
                     sf_id = None
+                if sf_id:
+                    company_ids_sf_ids[company_id] = (sf_id, None)
             if not sf_id:
                 sf_id, data_hash = create_object('Account', account_data, sf_url, sf_token)
                 action = 'created'
