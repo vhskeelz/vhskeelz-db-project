@@ -48,8 +48,9 @@ def iterate_candidates():
     with get_db_engine().connect() as conn:
         with conn.begin():
             for row in conn.execute("""
-                select email, first_name, last_name, phone_number, city, gender
-                from vehadarta_candidate_data_uniques_candidates
+                select "Email" email, "Candidate first name" first_name, "Candidate last name" last_name,
+                       "Phone number" phone_number, "Candidate location" city, "Gender" gender
+                from skeelz_export_candidates
             """):
                 yield process_input_row(dict(row))
 

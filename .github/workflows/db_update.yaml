@@ -39,13 +39,13 @@ jobs:
       - name: setup vhskeelz-db
         uses: ./.github/actions/setup-vhskeelz-db
         with:
-          selenium: "false"
+          selenium: "true"
           service_account_b64: ${{ secrets.SERVICE_ACCOUNT_B64 }}
         if: env.SKIP_DB_UPDATE != 'true'
       - name: run load_data
         env:
           PROCESSING_RECORD_NAME: ${{ github.event_name }}-github_db_update-load-data
-        run: poetry run vhskeelz-db load-data --extract --only-table-types google_sheet,view,smoove_blocklist
+        run: xvfb-run poetry run vhskeelz-db load-data --extract
         if: env.SKIP_DB_UPDATE != 'true'
       - name: mock db update
         if: env.SKIP_DB_UPDATE == 'true'

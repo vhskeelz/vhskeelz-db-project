@@ -39,14 +39,14 @@ COMPANY_ACCOUNT_SF_FIELDS = {
 }
 
 POSITION_CASE_SF_FIELDS = {
-    "City__c": {'db_field': 'city'},
-    "Description": {'db_field': 'position_description'},
-    "Subject": {'db_field': 'position_name'},
-    # "actice__c": {'db_field': 'status'},
-    "employmentType__c": {'db_field': 'employmentType'},
-    "hiringUser__c": {'db_field': 'hiringUser'},
-    "positionType__c": {'db_field': 'positionType'},
-    "Position_id__c": {'db_field': 'position_id', 'required': True},
+    "City__c": {'skeelz_db_field': 'City', 'db_field': 'city'},
+    "Description": {'skeelz_db_field': 'Position description', 'db_field': 'position_description'},
+    "Subject": {'skeelz_db_field': 'Position name', 'db_field': 'position_name'},
+    # "actice__c": {'skeelz_db_field': '', 'db_field': 'status'},
+    "employmentType__c": {'skeelz_db_field': 'Employment type', 'db_field': 'employmentType'},
+    "hiringUser__c": {'skeelz_db_field': 'Hiring user', 'db_field': 'hiringUser'},
+    "positionType__c": {'skeelz_db_field': 'Position type', 'db_field': 'positionType'},
+    "Position_id__c": {'skeelz_db_field': 'Position id', 'db_field': 'position_id', 'required': True},
     'RecordTypeId': {'lambda': lambda row: config.SALESFORCE_CASE_RECORD_TYPE_ID}
 }
 
@@ -180,6 +180,7 @@ def soql_query(soql, sf_url, sf_token):
 def update_candidate_contacts(conn, sf_url, sf_token, log):
     with conn.begin():
         candidate_ids_sf_ids = get_vhskeelz_ids_salesforce_ids(conn, 'candidate_contact')
+        # TODO: change to skeelz_export_candidates once it has candidate_id availalbe
         rows = list(conn.execute(f'select email, first_name, last_name, candidate_id, gender, location, phone_number from vehadarta_candidate_data_uniques_candidates'))
     for row in rows:
         row, contact_data = preprocess_row(row, CANDIDATE_CONTACT_SF_FIELDS, log)
@@ -213,6 +214,11 @@ def update_candidate_contacts(conn, sf_url, sf_token, log):
 
 
 def update_position_cases(conn, sf_url, sf_token, log):
+    skeelz_sql_fields = ','.join([
+        f'"{conf["skeelz_db_field"]}" "{conf["db_field"]}"'
+        for conf in POSITION_CASE_SF_FIELDS.values()
+        if conf.get('db_field')
+    ])
     sql_fields = ','.join([
         ('"' + conf['db_field'] + '"')
         for conf in POSITION_CASE_SF_FIELDS.values()
@@ -221,7 +227,7 @@ def update_position_cases(conn, sf_url, sf_token, log):
     with conn.begin():
         position_ids_sf_ids = get_vhskeelz_ids_salesforce_ids(conn, 'position_case')
         rows = list(conn.execute(f'''
-            WITH RankedItems AS (SELECT {sql_fields}, ROW_NUMBER() OVER(PARTITION BY "position_id") AS rn FROM vehadarta_positions_skills)
+            WITH RankedItems AS (SELECT {skeelz_sql_fields}, ROW_NUMBER() OVER(PARTITION BY "position_id") AS rn FROM vehadarta_positions_skills)
             SELECT {sql_fields} FROM RankedItems WHERE rn = 1;
         '''))
     for row in rows:
@@ -254,8 +260,9 @@ def update_company_accounts(conn, sf_url, sf_token, log):
     with conn.begin():
         company_ids_sf_ids = get_vhskeelz_ids_salesforce_ids(conn, 'company_account')
         rows = list(conn.execute('''
-            WITH RankedItems AS (SELECT "companyId", company_name, ROW_NUMBER() OVER(PARTITION BY "companyId") AS rn FROM vehadarta_positions_skills)
-            SELECT "companyId", company_name FROM RankedItems WHERE rn = 1 and company_name != 'null';
+            WITH RankedItems AS (
+                SELECT "Company id" "companyId", "Company name" company_name, ROW_NUMBER() OVER(PARTITION BY "Company id") AS rn FROM skeelz_export_positions
+            ) SELECT "companyId", company_name FROM RankedItems WHERE rn = 1 and company_name != 'null';
         '''))
     for row in rows:
         row, account_data = preprocess_row(row, COMPANY_ACCOUNT_SF_FIELDS, log)
