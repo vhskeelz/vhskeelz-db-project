@@ -24,4 +24,4 @@ jobs:
       - name: run load_data
         env:
           PROCESSING_RECORD_NAME: ${{ github.event_name }}-github_db_update-skeelz-export
-        run: poetry run vhskeelz-db load-data --extract --only-table-types skeelz_export
+        run: xvfb-run poetry run vhskeelz-db load-data --extract --only-table-types skeelz_export
