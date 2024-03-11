@@ -49,6 +49,7 @@ def processing_record_get_last_finished_at(**kwargs):
 
 @main.command()
 @click.option('--only-table-name')
+@click.option('--only-table-types')
 def extract_data(**kwargs):
     from . import extract_data
     with processing_record() as log:
@@ -60,6 +61,7 @@ def extract_data(**kwargs):
 @main.command()
 @click.option('--extract', is_flag=True)
 @click.option('--only-table-name')
+@click.option('--only-table-types')
 def load_data(**kwargs):
     from . import load_data
     with processing_record() as log:

@@ -20,13 +20,21 @@ class df_load_reduplicate_headers(DF.load):
         return duplicate_headers
 
 
-def validate_data(rows):
-    num_rows = 0
-    for row in rows:
-        num_rows += 1
-        if num_rows >= 150000:
-            raise Exception("Got 150000 rows, Looker Studio doesn't support more then 150000 rows, so we can't know for sure if the data is complete")
-        yield row
+def validate_data(table_name):
+    if config.EXTRACT_DATA_TABLES[table_name]['type'] == 'skeelz_export':
+        max_num_rows = None
+    else:
+        max_num_rows = 150000
+
+    def _iterator(rows):
+        num_rows = 0
+        for row in rows:
+            num_rows += 1
+            if max_num_rows and num_rows >= max_num_rows:
+                raise Exception(f"Got {max_num_rows} rows, Looker Studio doesn't support more then {max_num_rows} rows, so we can't know for sure if the data is complete")
+            yield row
+
+    return _iterator
 
 
 def load_table(table_name):
@@ -35,7 +43,7 @@ def load_table(table_name):
     temp_table_name = f'__temp__{table_name}'
     DF.Flow(
         df_load_reduplicate_headers(file_path, name=table_name, infer_strategy=DF.load.INFER_STRINGS, deduplicate_headers=True),
-        validate_data,
+        validate_data(table_name),
         DF.dump_to_sql(
             {temp_table_name: {'resource-name': table_name}},
             get_db_engine(),
@@ -50,18 +58,26 @@ def load_table(table_name):
                 '''))
 
 
-def main(log, extract=False, only_table_name=None, cache=None):
+def main(log, extract=False, only_table_name=None, cache=None, only_table_types=None):
+    if only_table_types:
+        only_table_types = [t.strip() for t in only_table_types.split(',') if t.strip()]
     if extract:
-        for table_name in extract_data.main(log, only_table_name=only_table_name, cache=cache):
+        for table_name in extract_data.main(log, only_table_name=only_table_name, cache=cache, only_table_types=only_table_types):
             log(f'Extracted {table_name}')
             load_table(table_name)
             yield table_name
     else:
-        for table_name in [name for name, table in config.EXTRACT_DATA_TABLES.items() if table['type'] == "google_sheet"]:
+        for table_name, table_config in config.EXTRACT_DATA_TABLES.items():
+            if table_config['type'] == 'view':
+                continue
+            if only_table_types and table_config['type'] not in only_table_types:
+                continue
             if only_table_name is None or only_table_name == table_name:
                 load_table(table_name)
                 yield table_name
     for name, table in config.EXTRACT_DATA_TABLES.items():
+        if only_table_types and table['type'] not in only_table_types:
+            continue
         if only_table_name is None or only_table_name == name:
             if table['type'] == 'view':
                 tables_start_with = table['tables_start_with']

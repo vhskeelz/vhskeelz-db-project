@@ -45,7 +45,7 @@ jobs:
       - name: run load_data
         env:
           PROCESSING_RECORD_NAME: ${{ github.event_name }}-github_db_update-load-data
-        run: poetry run vhskeelz-db load-data --extract
+        run: poetry run vhskeelz-db load-data --extract --only-table-types google_sheet,view,smoove_blocklist
         if: env.SKIP_DB_UPDATE != 'true'
       - name: mock db update
         if: env.SKIP_DB_UPDATE == 'true'
