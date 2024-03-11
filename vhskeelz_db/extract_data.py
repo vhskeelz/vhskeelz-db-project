@@ -48,7 +48,6 @@ def extract_google_sheets(log, only_table_name=None, cache=None):
         log(f'Found {len(matching_tables)} matching sheets')
         if cache is not None:
             cache['extract_data_google_sheets'] = matching_tables, gc, extract_data_tables
-    os.makedirs(config.EXTRACT_DATA_PATH, exist_ok=True)
     for table_name, spreadsheet in matching_tables.items():
         if only_table_name is None or only_table_name == table_name:
             data = get_all_sheet_values(gc, spreadsheet, extract_data_tables[table_name].get('tab_name'))
@@ -113,6 +112,7 @@ def extract_skeelz_exports(log, only_table_name=None):
 
 
 def main(log, only_table_name=None, cache=None, only_table_types=None):
+    os.makedirs(config.EXTRACT_DATA_PATH, exist_ok=True)
     if only_table_types and isinstance(only_table_types, str):
         only_table_types = [t.strip() for t in only_table_types.split(',') if t.strip()]
     if not only_table_types or 'google_sheet' in only_table_types:
