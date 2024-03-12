@@ -2,6 +2,7 @@ import os
 import csv
 import time
 import tempfile
+import contextlib
 
 import backoff
 import gspread
@@ -85,21 +86,40 @@ def check_cookies(cookies):
     return 'id_token' in cookie_names and 'access_token' in cookie_names and '__rtr_sofi' in cookie_names and '__rtr_state' in cookie_names
 
 
-def extract_skeelz_exports(log, only_table_name=None):
+@contextlib.contextmanager
+def get_extract_skeelz_exports_context(cache, needs_skeelz_export=True):
+    if needs_skeelz_export:
+        if 'extract_skeelz_exports_context' in cache:
+            yield cache['extract_skeelz_exports_context']
+        else:
+            headless = False
+            proxy_server = None
+            set_trace = False
+            with tempfile.TemporaryDirectory() as download_path:
+                with download_position_candidate_cv.driver_contextmanager(download_path, headless, proxy_server, set_trace) as driver:
+                    cache['extract_skeelz_exports_context'] = download_path, driver
+                    yield cache['extract_skeelz_exports_context']
+    else:
+        cache['extract_skeelz_exports_context'] = None
+        yield cache['extract_skeelz_exports_context']
+
+
+def extract_skeelz_exports(log, only_table_name=None, cache=None):
+    if not cache:
+        cache = {}
     log('Extracting skeelz_exports...')
-    headless = False
-    proxy_server = None
-    set_trace = False
-    with tempfile.TemporaryDirectory() as download_path:
-        with download_position_candidate_cv.driver_contextmanager(download_path, headless, proxy_server, set_trace) as driver:
+    if 'extract_skeelz_exports_cookies' in cache:
+        cookies = cache['extract_skeelz_exports_cookies']
+    else:
+        with get_extract_skeelz_exports_context(cache, needs_skeelz_export=True) as (download_path, driver):
             driver.get(config.CANDIDATE_POSITION_CV_URL_TEMPLATE.format(position_id='', candidate_id=''))
             download_position_candidate_cv.login(log, driver)
             for i in range(20):
                 time.sleep(1)
                 if check_cookies(driver.get_cookies()):
                     break
-            cookies = driver.get_cookies()
-            assert check_cookies(cookies)
+            cookies = cache['extract_skeelz_exports_cookies'] = driver.get_cookies()
+    assert check_cookies(cookies)
     for table_name, table_config in config.EXTRACT_DATA_TABLES.items():
         if table_config['type'] != 'skeelz_export':
             continue
@@ -125,4 +145,4 @@ def main(log, only_table_name=None, cache=None, only_table_types=None):
             yield from extract_smoove_blocklist(log)
     if not only_table_types or 'skeelz_export' in only_table_types:
         if not only_table_name or only_table_name in [n for n, t in config.EXTRACT_DATA_TABLES.items() if t['type'] == 'skeelz_export']:
-            yield from extract_skeelz_exports(log, only_table_name=only_table_name)
+            yield from extract_skeelz_exports(log, only_table_name=only_table_name, cache=cache)

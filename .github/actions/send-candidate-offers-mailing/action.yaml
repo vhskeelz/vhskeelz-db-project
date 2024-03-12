@@ -29,7 +29,7 @@ runs:
     - name: setup vhskeelz-db
       uses: ./.github/actions/setup-vhskeelz-db
       with:
-        selenium: "${{ inputs.mailing_type == 'interested' }}"
+        selenium: "true"
         service_account_b64: ${{ inputs.service_account_b64 }}
     - name: run
       shell: bash
@@ -44,11 +44,7 @@ runs:
           CMD="$CMD --dry-run"
         fi
         CMD="$CMD ${{ inputs.run_args }}"
-        if [ "${{ inputs.mailing_type }}" == "interested" ]; then
-          xvfb-run $CMD
-        else
-          $CMD
-        fi
+        xvfb-run $CMD
     - name: upload artifacts
       if: always()
       uses: actions/upload-artifact@v3

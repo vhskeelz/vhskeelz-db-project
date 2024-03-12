@@ -98,23 +98,29 @@ def main(log, extract=False, only_table_name=None, cache=None, only_table_types=
 
 
 def ensure_updated_tables(log, table_names):
-    cache = {}
+    needs_skeelz_export = False
     for table_name in table_names:
-        log(f'Updating table {table_name}...')
-        i = 0
-        updated_table_names = []
-        while True:
-            i += 1
-            try:
-                updated_table_names = list(main(log, extract=True, only_table_name=table_name, cache=cache))
-                break
-            except:
-                if i > 3:
-                    raise
-                else:
-                    log(traceback.format_exc())
-                    log(f'Failed to update table {table_name}, retrying ({i})...')
-                    time.sleep(random.randint(2, 10))
-        assert len(updated_table_names) == 1, updated_table_names
-        assert updated_table_names[0] == table_name, updated_table_names
-        log('OK')
+        if config.EXTRACT_DATA_TABLES[table_name]['type'] == 'skeelz_export':
+            needs_skeelz_export = True
+            break
+    cache = {}
+    with extract_data.get_extract_skeelz_exports_context(cache, needs_skeelz_export=needs_skeelz_export) as _:
+        for table_name in table_names:
+            log(f'Updating table {table_name}...')
+            i = 0
+            updated_table_names = []
+            while True:
+                i += 1
+                try:
+                    updated_table_names = list(main(log, extract=True, only_table_name=table_name, cache=cache))
+                    break
+                except:
+                    if i > 3:
+                        raise
+                    else:
+                        log(traceback.format_exc())
+                        log(f'Failed to update table {table_name}, retrying ({i})...')
+                        time.sleep(random.randint(2, 10))
+            assert len(updated_table_names) == 1, updated_table_names
+            assert updated_table_names[0] == table_name, updated_table_names
+            log('OK')
