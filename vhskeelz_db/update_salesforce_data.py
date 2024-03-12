@@ -226,10 +226,7 @@ def update_position_cases(conn, sf_url, sf_token, log):
     ])
     with conn.begin():
         position_ids_sf_ids = get_vhskeelz_ids_salesforce_ids(conn, 'position_case')
-        rows = list(conn.execute(f'''
-            WITH RankedItems AS (SELECT {skeelz_sql_fields}, ROW_NUMBER() OVER(PARTITION BY "position_id") AS rn FROM vehadarta_positions_skills)
-            SELECT {sql_fields} FROM RankedItems WHERE rn = 1;
-        '''))
+        rows = list(conn.execute(f'SELECT {skeelz_sql_fields} FROM skeelz_export_positions)'))
     for row in rows:
         row, case_data = preprocess_row(row, POSITION_CASE_SF_FIELDS, log)
         position_id = row['position_id']
