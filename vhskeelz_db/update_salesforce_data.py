@@ -214,19 +214,14 @@ def update_candidate_contacts(conn, sf_url, sf_token, log):
 
 
 def update_position_cases(conn, sf_url, sf_token, log):
-    skeelz_sql_fields = ','.join([
+    sql_fields = ','.join([
         f'"{conf["skeelz_db_field"]}" "{conf["db_field"]}"'
         for conf in POSITION_CASE_SF_FIELDS.values()
-        if conf.get('db_field')
-    ])
-    sql_fields = ','.join([
-        ('"' + conf['db_field'] + '"')
-        for conf in POSITION_CASE_SF_FIELDS.values()
-        if conf.get('db_field')
+        if conf.get('db_field') and conf.get('skeelz_db_field')
     ])
     with conn.begin():
         position_ids_sf_ids = get_vhskeelz_ids_salesforce_ids(conn, 'position_case')
-        rows = list(conn.execute(f'SELECT {skeelz_sql_fields} FROM skeelz_export_positions)'))
+        rows = list(conn.execute(f'SELECT {sql_fields} FROM skeelz_export_positions)'))
     for row in rows:
         row, case_data = preprocess_row(row, POSITION_CASE_SF_FIELDS, log)
         position_id = row['position_id']
