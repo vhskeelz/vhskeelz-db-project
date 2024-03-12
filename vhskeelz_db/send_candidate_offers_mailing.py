@@ -21,6 +21,8 @@ DEPENDANT_TABLES = {
         'aggregation_candidates',
         'aggregation_positions',
         'aggregation_candidate_positions',
+
+        'skeelz_export_positions',
     ]
 }
 
@@ -158,12 +160,16 @@ def get_where_sql(mailing_type):
 
 
 def get_group_key(row, mailing_type):
-    return {
-        'num_fits': (row['company_email'], row['position_id'], row['city']),
-        'interested': (row['company_email'],),
-        'new_matches': (row['candidate_email'],),
-        'new_position': (row['company_email'], row['position_id']),
-    }[mailing_type]
+    if mailing_type == 'num_fits':
+        return row['company_email'], row['position_id'], row['city']
+    elif mailing_type == 'interested':
+        return row['company_email']
+    elif mailing_type == 'new_matches':
+        return row['company_email']
+    elif mailing_type == 'new_position':
+        return ','.join(row['company_emails_names'].keys()), row['position_id']
+    else:
+        raise NotImplementedError()
 
 
 def get_email_field(mailing_type):
@@ -171,7 +177,7 @@ def get_email_field(mailing_type):
         'num_fits': 'company_email',
         'interested': 'company_email',
         'new_matches': 'candidate_email',
-        'new_position': 'company_email',
+        'new_position': 'company_emails_names',
     }[mailing_type]
 
 
@@ -259,10 +265,10 @@ def get_mail_data(grouped_rows, mailing_type, log):
             first_row = rows[0]
             data.append({
                 "from_email": from_email,
-                "to_emails": first_row[get_email_field(mailing_type)],
+                "to_emails": list(set(first_row[get_email_field(mailing_type)].keys())),
                 "template_id": template_id,
                 "dynamic_template_data": {
-                    "company_name": first_row['company_name'],
+                    "company_name": ' / '.join(first_row[get_email_field(mailing_type)].values()),
                     "position_name": first_row['position_name'],
                 },
                 'candidate_position_ids': [[row['candidate_id'], row['position_id']] for row in rows]
@@ -282,6 +288,8 @@ def get_dynamic_template_data(mailing_type, row):
 def send_mails(log, mailing_type, mail_data, allow_send, test_email_to, test_email_limit, test_email_update_db):
     if test_email_to == 'default':
         test_email_to = config.CANDIDATE_OFFERS_MAILING_CONFIG['default_test_email_to']
+    if test_email_to:
+        test_email_to = [e.strip() for e in test_email_to.split(',')]
     log(f'Sending {len(mail_data)} mails for {mailing_type} (allow_send={allow_send}, test_email_to={test_email_to}, test_email_limit={test_email_limit}, test_email_update_db={test_email_update_db})')
     if allow_send:
         assert not test_email_to and not test_email_limit and not test_email_update_db
@@ -362,6 +370,7 @@ def remove_blocklists(log, mailing_type, rows):
     blocked_candidate_id = 0
     blocked_position_id = 0
     blocked_smoove_email = 0
+    email_field = get_email_field(mailing_type)
     for row in rows:
         if (row['candidate_id'].strip(), row['position_id'].strip()) in block_candidate_id_position_id:
             blocked_candidate_id_position_id += 1
@@ -369,10 +378,21 @@ def remove_blocklists(log, mailing_type, rows):
             blocked_candidate_id += 1
         elif row['position_id'].strip() in block_position_id:
             blocked_position_id += 1
-        elif row[get_email_field(mailing_type)].strip() in smoove_blocklist_emails:
+        elif email_field != 'company_emails_names' and row[email_field].strip() in smoove_blocklist_emails:
             blocked_smoove_email += 1
         else:
-            valid_rows.append(row)
+            if email_field == 'company_emails_names':
+                new_email_names = {}
+                for email, name in row[email_field].items():
+                    if email.strip() in smoove_blocklist_emails:
+                        blocked_smoove_email += 1
+                    else:
+                        new_email_names[email.strip()] = name
+                row[email_field] = new_email_names
+                if len(row[email_field]) < 1:
+                    row = None
+            if row:
+                valid_rows.append(row)
     log(f'Blocked {blocked_candidate_id_position_id} candidate_id_position_id, {blocked_candidate_id} candidate_id, {blocked_position_id} position_id, {blocked_smoove_email} smoove emails')
     return valid_rows
 
@@ -427,17 +447,41 @@ def get_candidate_position_rows(log, mailing_type):
             ]
 
 
-def get_new_position_candidate_position_rows(log):
+def get_ta_emails_names(emails, firstnames, lastnames):
+    emails = [e.strip() for e in emails.split(',')] if emails else []
+    firstnames = [fn.strip() for fn in firstnames.split(',')] if firstnames else []
+    lastnames = [ln.strip() for ln in lastnames.split(',')] if lastnames else []
+    emails_names = {}
+    for i, email in enumerate(emails):
+        name = []
+        if len(firstnames) > i:
+            name.append(firstnames[i])
+        if len(lastnames) > i:
+            name.append(lastnames[i])
+        emails_names[email] = ' '.join(name)
+    return emails_names
+
+
+def get_new_position_candidate_position_rows(log, with_sent=False):
     with get_db_engine().connect() as conn:
         with conn.begin():
             log("Fetching candidate positions...")
+            if with_sent:
+                extra_where = ''
+            else:
+                extra_where = dedent('''
+                    and "Position id" in (
+                        select "positionOfferId"
+                        from candidate_offers_new_position_mailing_status
+                        where status = 'sent'
+                    )
+                ''')
             return [
                 {
                     'candidate_id': '-',
                     'position_id': row.position_id,
                     'candidate_name': '-',
-                    'company_email': row.ta_email,
-                    'company_name': row.ta_name,
+                    'company_emails_names': get_ta_emails_names(row.ta_emails, row.ta_firstnames, row.ta_lastnames),
                     'position_name': row.position_name,
                     'city': '-',
                     'details_url': '-',
@@ -446,27 +490,27 @@ def get_new_position_candidate_position_rows(log):
                     'creation_date': datetime.datetime.now()
                 } for row
                 in conn.execute(dedent(f'''
-                    select p.position_id, p.position_name, t.ta_email, t.ta_name
-                    from {DEPENDANT_TABLES['vehadarta_positions_skills']} p
-                    join {DEPENDANT_TABLES['vehadarta_company_and_company_ta']} t
-                        on p."companyId" != 'null' and (p."companyId" = t."companyId" or p."companyId" = t.comp_id)
-                    where p.position_id not in (
-                        select "positionOfferId"
-                        from candidate_offers_new_position_mailing_status
-                        where status = 'sent'
-                    ) and p.active != '0'
-                    group by p.position_id, p.position_name, t.ta_email, t.ta_name
+                    select
+                        "Position id" position_id, "Position name" position_name,
+                        "Company TA manager email" ta_emails,
+                        "Company TA manager first name" ta_firstnames, "Company TA manager last name" ta_lastnames
+                    from {DEPENDANT_TABLES['skeelz_export_positions']}
+                    where "Position active status" != 'OnHold'
+                        {extra_where}
+                    group by position_id, position_name, ta_emails, ta_firstnames, ta_lastnames
                 '''))
             ]
 
 
 def main(log, mailing_type, dry_run=False, allow_send=False, test_email_to=None, test_email_limit=None, test_email_update_db=False,
-         only_candidate_position_ids=None, ensure_updated_tables=False):
+         only_candidate_position_ids=None, ensure_updated_tables=False, with_sent=False):
+    if with_sent:
+        assert dry_run or not allow_send
     if ensure_updated_tables:
         load_data.ensure_updated_tables(log, DEPENDANT_TABLES.keys())
     run_migrations(log, mailing_type)
     if mailing_type == 'new_position':
-        rows = get_new_position_candidate_position_rows(log)
+        rows = get_new_position_candidate_position_rows(log, with_sent)
     else:
         rows = get_candidate_position_rows(log, mailing_type)
         if only_candidate_position_ids:

@@ -105,6 +105,7 @@ def download_position_candidate_cv_multi(**kwargs):
 @click.option('--test-email-update-db', is_flag=True)
 @click.option('--only-candidate-position-ids')
 @click.option('--ensure-updated-tables', is_flag=True)
+@click.option('--with-sent', is_flag=True)
 def send_candidate_offers_mailing(**kwargs):
     only_candidate_position_ids = kwargs.pop('only_candidate_position_ids')
     kwargs['only_candidate_position_ids'] = json.loads(only_candidate_position_ids) if only_candidate_position_ids else None
