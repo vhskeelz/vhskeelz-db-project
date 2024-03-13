@@ -1,3 +1,4 @@
+import contextlib
 import json
 import time
 import base64
@@ -90,18 +91,16 @@ def get_vhskeelz_ids_salesforce_ids(conn, object_type):
 
 
 def update_vhskeelz_id_sf_id(conn, object_type, vhskeelz_id, sf_id, vhskeelz_ids_salesforce_ids, data_hash):
-    with conn.begin() as txn:
-        if vhskeelz_id not in vhskeelz_ids_salesforce_ids:
-            conn.execute(f"""
-                insert into salesforce_objects (object_type, salesforce_id, vhskeelz_id, created_at, updated_at, data_hash)
-                values ('{object_type}', '{sf_id}', '{vhskeelz_id}', now(), now(), '{data_hash}')
-            """)
-        else:
-            assert sf_id == vhskeelz_ids_salesforce_ids[vhskeelz_id][0]
-            conn.execute(f"""
-                update salesforce_objects set updated_at = now(), data_hash = '{data_hash}' where object_type = '{object_type}' and salesforce_id = '{sf_id}' and vhskeelz_id = '{vhskeelz_id}';
-            """)
-        txn.commit()
+    if vhskeelz_id not in vhskeelz_ids_salesforce_ids:
+        conn.execute(f"""
+            insert into salesforce_objects (object_type, salesforce_id, vhskeelz_id, created_at, updated_at, data_hash)
+            values ('{object_type}', '{sf_id}', '{vhskeelz_id}', now(), now(), '{data_hash}')
+        """)
+    else:
+        assert sf_id == vhskeelz_ids_salesforce_ids[vhskeelz_id][0]
+        conn.execute(f"""
+            update salesforce_objects set updated_at = now(), data_hash = '{data_hash}' where object_type = '{object_type}' and salesforce_id = '{sf_id}' and vhskeelz_id = '{vhskeelz_id}';
+        """)
 
 
 def salesforce_login():
@@ -182,35 +181,38 @@ def update_candidate_contacts(conn, sf_url, sf_token, log):
         candidate_ids_sf_ids = get_vhskeelz_ids_salesforce_ids(conn, 'candidate_contact')
         # TODO: change to skeelz_export_candidates once it has candidate_id availalbe
         rows = list(conn.execute(f'select email, first_name, last_name, candidate_id, gender, location, phone_number from vehadarta_candidate_data_uniques_candidates'))
-    for row in rows:
-        row, contact_data = preprocess_row(row, CANDIDATE_CONTACT_SF_FIELDS, log)
-        candidate_id = row['candidate_id']
-        try:
-            if candidate_id in candidate_ids_sf_ids:
-                sf_id = candidate_ids_sf_ids[candidate_id][0]
-            else:
-                existing_contacts = list(soql_query("SELECT Id FROM Contact WHERE Candidate_id__c='{candidate_id}'", sf_url, sf_token))
-                assert len(existing_contacts) <= 1, f'Too many existing contacts for candidate_id {candidate_id}: {existing_contacts}'
-                sf_id = existing_contacts[0]['Id'] if len(existing_contacts) > 0 else None
-                if sf_id:
-                    candidate_ids_sf_ids[candidate_id] = (sf_id, None)
-            if not sf_id:
-                sf_id, data_hash = create_object('Contact', contact_data, sf_url, sf_token)
-                action = 'created'
-            else:
-                action, sf_id, data_hash = upsert_object('Contact', f'Id/{sf_id}', contact_data, sf_url, sf_token, *candidate_ids_sf_ids[candidate_id])
-            update_vhskeelz_id_sf_id(conn, 'candidate_contact', candidate_id, sf_id, candidate_ids_sf_ids, data_hash)
-            log(f'candidate_id {row["candidate_id"]}: {action} ({sf_id})')
-        except Exception as e:
-            ok = False
-            if isinstance(e, SalesforceException):
-                res = e.parse_res_text()
-                if res and isinstance(res, list) and len(res) == 1 and isinstance(res[0], dict):
-                    if res[0].get('errorCode') == 'INVALID_EMAIL_ADDRESS':
-                        ok = True
-                        log(f'WARNING failed to update candidate_id {candidate_id} invalid email: {row["email"]}')
-            if not ok:
-                raise Exception(f'Failed to update candidate_id {candidate_id}') from e
+    with conn_transaction_handler(conn) as commit:
+        for row in rows:
+            row, contact_data = preprocess_row(row, CANDIDATE_CONTACT_SF_FIELDS, log)
+            candidate_id = row['candidate_id']
+            try:
+                if candidate_id in candidate_ids_sf_ids:
+                    sf_id = candidate_ids_sf_ids[candidate_id][0]
+                else:
+                    log(f'candidate_id {candidate_id}: searching for related contacts in Salesforce...')
+                    existing_contacts = list(soql_query("SELECT Id FROM Contact WHERE Candidate_id__c='{candidate_id}'", sf_url, sf_token))
+                    assert len(existing_contacts) <= 1, f'Too many existing contacts for candidate_id {candidate_id}: {existing_contacts}'
+                    sf_id = existing_contacts[0]['Id'] if len(existing_contacts) > 0 else None
+                    if sf_id:
+                        candidate_ids_sf_ids[candidate_id] = (sf_id, None)
+                if not sf_id:
+                    sf_id, data_hash = create_object('Contact', contact_data, sf_url, sf_token)
+                    action = 'created'
+                else:
+                    action, sf_id, data_hash = upsert_object('Contact', f'Id/{sf_id}', contact_data, sf_url, sf_token, *candidate_ids_sf_ids[candidate_id])
+                update_vhskeelz_id_sf_id(conn, 'candidate_contact', candidate_id, sf_id, candidate_ids_sf_ids, data_hash)
+                commit()
+                log(f'candidate_id {row["candidate_id"]}: {action} ({sf_id})')
+            except Exception as e:
+                ok = False
+                if isinstance(e, SalesforceException):
+                    res = e.parse_res_text()
+                    if res and isinstance(res, list) and len(res) == 1 and isinstance(res[0], dict):
+                        if res[0].get('errorCode') == 'INVALID_EMAIL_ADDRESS':
+                            ok = True
+                            log(f'WARNING failed to update candidate_id {candidate_id} invalid email: {row["email"]}')
+                if not ok:
+                    raise Exception(f'Failed to update candidate_id {candidate_id}') from e
 
 
 def update_position_cases(conn, sf_url, sf_token, log):
@@ -222,30 +224,48 @@ def update_position_cases(conn, sf_url, sf_token, log):
     with conn.begin():
         position_ids_sf_ids = get_vhskeelz_ids_salesforce_ids(conn, 'position_case')
         rows = list(conn.execute(f'SELECT {sql_fields} FROM skeelz_export_positions'))
-    for row in rows:
-        row, case_data = preprocess_row(row, POSITION_CASE_SF_FIELDS, log)
-        position_id = row['position_id']
-        try:
-            if position_id in position_ids_sf_ids:
-                sf_id = position_ids_sf_ids[position_id][0]
-            else:
-                existing_cases = list(soql_query(f"SELECT Id FROM Case WHERE Position_id__c='{position_id}'", sf_url, sf_token))
-                assert len(existing_cases) <= 1, f'Too many existing cases for position_id {position_id}: {existing_cases}'
-                if len(existing_cases):
-                    sf_id = existing_cases[0]['Id']
+    with conn_transaction_handler(conn) as commit:
+        for row in rows:
+            row, case_data = preprocess_row(row, POSITION_CASE_SF_FIELDS, log)
+            position_id = row['position_id']
+            try:
+                if position_id in position_ids_sf_ids:
+                    sf_id = position_ids_sf_ids[position_id][0]
                 else:
-                    sf_id = None
-                if sf_id:
-                    position_ids_sf_ids[position_id] = (sf_id, None)
-            if not sf_id:
-                sf_id, data_hash = create_object('Case', case_data, sf_url, sf_token)
-                action = 'created'
-            else:
-                action, sf_id, data_hash = upsert_object('Case', f'Id/{sf_id}', case_data, sf_url, sf_token, *position_ids_sf_ids[position_id])
-            update_vhskeelz_id_sf_id(conn, 'position_case', position_id, sf_id, position_ids_sf_ids, data_hash)
-            log(f'position_id {position_id}: {action} ({sf_id})')
-        except Exception as e:
-            raise Exception(f'Failed to update position_id {position_id}') from e
+                    log(f'position_id {position_id}: searching for related cases in Salesforce...')
+                    existing_cases = list(soql_query(f"SELECT Id FROM Case WHERE Position_id__c='{position_id}'", sf_url, sf_token))
+                    assert len(existing_cases) <= 1, f'Too many existing cases for position_id {position_id}: {existing_cases}'
+                    if len(existing_cases):
+                        sf_id = existing_cases[0]['Id']
+                    else:
+                        sf_id = None
+                    if sf_id:
+                        position_ids_sf_ids[position_id] = (sf_id, None)
+                if not sf_id:
+                    sf_id, data_hash = create_object('Case', case_data, sf_url, sf_token)
+                    action = 'created'
+                else:
+                    action, sf_id, data_hash = upsert_object('Case', f'Id/{sf_id}', case_data, sf_url, sf_token, *position_ids_sf_ids[position_id])
+                update_vhskeelz_id_sf_id(conn, 'position_case', position_id, sf_id, position_ids_sf_ids, data_hash)
+                commit()
+                log(f'position_id {position_id}: {action} ({sf_id})')
+            except Exception as e:
+                raise Exception(f'Failed to update position_id {position_id}') from e
+
+
+@contextlib.contextmanager
+def conn_transaction_handler(conn):
+    last_commit = time.time()
+    with conn.begin() as txn:
+
+        def commit(force=False):
+            if force or time.time() - last_commit > 120:
+                txn.commit()
+
+        try:
+            yield commit
+        finally:
+            commit(True)
 
 
 def update_company_accounts(conn, sf_url, sf_token, log):
@@ -256,53 +276,56 @@ def update_company_accounts(conn, sf_url, sf_token, log):
                 SELECT "Company id" "companyId", "Company name" company_name, ROW_NUMBER() OVER(PARTITION BY "Company id") AS rn FROM skeelz_export_positions
             ) SELECT "companyId", company_name FROM RankedItems WHERE rn = 1 and company_name != 'null';
         '''))
-    for row in rows:
-        row, account_data = preprocess_row(row, COMPANY_ACCOUNT_SF_FIELDS, log)
-        company_name, company_id = row['company_name'], row['companyId']
-        try:
-            if company_id in company_ids_sf_ids:
-                sf_id = company_ids_sf_ids[company_id][0]
-            else:
-                existing_sf_ids = []
-                for search_field, search_value in [
-                    ('Company_id__c', company_id),
-                    ('comp_id__c', company_id),
-                    ('Name', company_name),
-                ]:
-                    vhskeelz_api_cmt_account_id = None
-                    for account in soql_query('''
-                        SELECT Id, vhskeelz_api_cmt__c FROM Account WHERE {search_field}='{search_value}'
-                    '''.format(
-                        search_field=search_field,
-                        search_value=search_value.replace("'", "\\'")
-                    ), sf_url, sf_token):
-                        if account['vhskeelz_api_cmt__c'] == '{"managed_by_api": 2}':
-                            assert not vhskeelz_api_cmt_account_id, f'multiple vhskeelz_api_cmt accounts for company {company_id}'
-                            vhskeelz_api_cmt_account_id = account['Id']
-                        if account['Id'] not in existing_sf_ids:
-                            existing_sf_ids.append(account['Id'])
-                if len(existing_sf_ids) > 1:
-                    if vhskeelz_api_cmt_account_id:
-                        log(f'WARNING: Too many existing accounts, will use the api cmt account. company_id {company_id}: {vhskeelz_api_cmt_account_id}')
-                        sf_id = vhskeelz_api_cmt_account_id
-                    else:
-                        log(f'WARNING: Too many existing accounts, will use the first one. company_id {company_id}: {existing_sf_ids}')
-                        sf_id = existing_sf_ids[0]
-                elif len(existing_sf_ids) == 1:
-                    sf_id = existing_sf_ids[0]
+    with conn_transaction_handler(conn) as commit:
+        for row in rows:
+            row, account_data = preprocess_row(row, COMPANY_ACCOUNT_SF_FIELDS, log)
+            company_name, company_id = row['company_name'], row['companyId']
+            try:
+                if company_id in company_ids_sf_ids:
+                    sf_id = company_ids_sf_ids[company_id][0]
                 else:
-                    sf_id = None
-                if sf_id:
-                    company_ids_sf_ids[company_id] = (sf_id, None)
-            if not sf_id:
-                sf_id, data_hash = create_object('Account', account_data, sf_url, sf_token)
-                action = 'created'
-            else:
-                action, sf_id, data_hash = upsert_object('Account', f'Id/{sf_id}', account_data, sf_url, sf_token, *company_ids_sf_ids[company_id])
-            update_vhskeelz_id_sf_id(conn, 'company_account', company_id, sf_id, company_ids_sf_ids, data_hash)
-            log(f'company_id {company_id}: {action} ({sf_id})')
-        except Exception as e:
-            raise Exception(f'Failed to process company_id {company_id}') from e
+                    log(f'company_id {company_id}: searching for related accounts in Salesforce...')
+                    existing_sf_ids = []
+                    for search_field, search_value in [
+                        ('Company_id__c', company_id),
+                        ('comp_id__c', company_id),
+                        ('Name', company_name),
+                    ]:
+                        vhskeelz_api_cmt_account_id = None
+                        for account in soql_query('''
+                            SELECT Id, vhskeelz_api_cmt__c FROM Account WHERE {search_field}='{search_value}'
+                        '''.format(
+                            search_field=search_field,
+                            search_value=search_value.replace("'", "\\'")
+                        ), sf_url, sf_token):
+                            if account['vhskeelz_api_cmt__c'] == '{"managed_by_api": 2}':
+                                assert not vhskeelz_api_cmt_account_id, f'multiple vhskeelz_api_cmt accounts for company {company_id}'
+                                vhskeelz_api_cmt_account_id = account['Id']
+                            if account['Id'] not in existing_sf_ids:
+                                existing_sf_ids.append(account['Id'])
+                    if len(existing_sf_ids) > 1:
+                        if vhskeelz_api_cmt_account_id:
+                            log(f'WARNING: Too many existing accounts, will use the api cmt account. company_id {company_id}: {vhskeelz_api_cmt_account_id}')
+                            sf_id = vhskeelz_api_cmt_account_id
+                        else:
+                            log(f'WARNING: Too many existing accounts, will use the first one. company_id {company_id}: {existing_sf_ids}')
+                            sf_id = existing_sf_ids[0]
+                    elif len(existing_sf_ids) == 1:
+                        sf_id = existing_sf_ids[0]
+                    else:
+                        sf_id = None
+                    if sf_id:
+                        company_ids_sf_ids[company_id] = (sf_id, None)
+                if not sf_id:
+                    sf_id, data_hash = create_object('Account', account_data, sf_url, sf_token)
+                    action = 'created'
+                else:
+                    action, sf_id, data_hash = upsert_object('Account', f'Id/{sf_id}', account_data, sf_url, sf_token, *company_ids_sf_ids[company_id])
+                update_vhskeelz_id_sf_id(conn, 'company_account', company_id, sf_id, company_ids_sf_ids, data_hash)
+                commit()
+                log(f'company_id {company_id}: {action} ({sf_id})')
+            except Exception as e:
+                raise Exception(f'Failed to process company_id {company_id}') from e
 
 
 def preprocess_row(row, sf_fields_confs=None, log=None):
