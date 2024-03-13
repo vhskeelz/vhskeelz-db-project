@@ -29,9 +29,10 @@ def start(process_name, process_id):
 
 
 def log(sql_execute, process_name, process_id, log_):
-    sql_execute(dedent('''
-        insert into processing_record_log (process_id, process_name, log) values (%s, %s, %s);
-    '''), (process_id, process_name, log_))
+    log_ = log_.replace("'", "''")
+    sql_execute(dedent(f'''
+        insert into processing_record_log (process_id, process_name, log) values ('{process_id}', '{process_name}', '{log_}');
+    '''))
 
 
 def finish(process_name, process_id):
