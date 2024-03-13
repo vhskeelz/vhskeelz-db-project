@@ -1,10 +1,11 @@
+import time
 import traceback
 from textwrap import dedent
 from functools import partial
 from contextlib import contextmanager
 
 from . import config
-from .db import get_db_engine
+from .db import get_db_engine, conn_transaction_sql_handler
 
 
 def start(process_name, process_id):
@@ -27,12 +28,10 @@ def start(process_name, process_id):
             '''), (process_id, process_name))
 
 
-def log(process_name, process_id, log):
-    with get_db_engine().connect() as conn:
-        with conn.begin():
-            conn.execute(dedent('''
-                insert into processing_record_log (process_id, process_name, log) values (%s, %s, %s);
-            '''), (process_id, process_name, log))
+def log(sql_execute, process_name, process_id, log_):
+    sql_execute(dedent('''
+        insert into processing_record_log (process_id, process_name, log) values (%s, %s, %s);
+    '''), (process_id, process_name, log_))
 
 
 def finish(process_name, process_id):
@@ -46,19 +45,21 @@ def finish(process_name, process_id):
 @contextmanager
 def processing_record(delayed_start=False):
     if config.PROCESSING_RECORD_ENABLED:
-        if not delayed_start:
-            start(config.PROCESSING_RECORD_NAME, config.PROCESSING_RECORD_ID)
-        log_partial = partial(log, config.PROCESSING_RECORD_NAME, config.PROCESSING_RECORD_ID)
-        try:
-            if delayed_start:
-                yield partial(start, config.PROCESSING_RECORD_NAME, config.PROCESSING_RECORD_ID), log_partial
-            else:
-                yield log_partial
-        except:
-            log_partial(traceback.format_exc())
-            raise Exception()
-        finally:
-            finish(config.PROCESSING_RECORD_NAME, config.PROCESSING_RECORD_ID)
+        with get_db_engine().connect() as conn:
+            with conn_transaction_sql_handler(conn) as sql_execute:
+                if not delayed_start:
+                    start(config.PROCESSING_RECORD_NAME, config.PROCESSING_RECORD_ID)
+                log_partial = partial(log, sql_execute, config.PROCESSING_RECORD_NAME, config.PROCESSING_RECORD_ID)
+                try:
+                    if delayed_start:
+                        yield partial(start, config.PROCESSING_RECORD_NAME, config.PROCESSING_RECORD_ID), log_partial
+                    else:
+                        yield log_partial
+                except:
+                    log_partial(traceback.format_exc())
+                    raise Exception()
+                finally:
+                    finish(config.PROCESSING_RECORD_NAME, config.PROCESSING_RECORD_ID)
     elif delayed_start:
         yield lambda: None, print
     else:

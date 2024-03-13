@@ -90,15 +90,15 @@ def get_vhskeelz_ids_salesforce_ids(conn, object_type):
     }
 
 
-def update_vhskeelz_id_sf_id(conn, object_type, vhskeelz_id, sf_id, vhskeelz_ids_salesforce_ids, data_hash):
+def update_vhskeelz_id_sf_id(sql_execute, object_type, vhskeelz_id, sf_id, vhskeelz_ids_salesforce_ids, data_hash):
     if vhskeelz_id not in vhskeelz_ids_salesforce_ids:
-        conn.execute(f"""
+        sql_execute(f"""
             insert into salesforce_objects (object_type, salesforce_id, vhskeelz_id, created_at, updated_at, data_hash)
-            values ('{object_type}', '{sf_id}', '{vhskeelz_id}', now(), now(), '{data_hash}')
+            values ('{object_type}', '{sf_id}', '{vhskeelz_id}', now(), now(), '{data_hash}');
         """)
     else:
         assert sf_id == vhskeelz_ids_salesforce_ids[vhskeelz_id][0]
-        conn.execute(f"""
+        sql_execute(f"""
             update salesforce_objects set updated_at = now(), data_hash = '{data_hash}' where object_type = '{object_type}' and salesforce_id = '{sf_id}' and vhskeelz_id = '{vhskeelz_id}';
         """)
 
@@ -181,7 +181,7 @@ def update_candidate_contacts(conn, sf_url, sf_token, log):
         candidate_ids_sf_ids = get_vhskeelz_ids_salesforce_ids(conn, 'candidate_contact')
         # TODO: change to skeelz_export_candidates once it has candidate_id availalbe
         rows = list(conn.execute(f'select email, first_name, last_name, candidate_id, gender, location, phone_number from vehadarta_candidate_data_uniques_candidates'))
-    with conn_transaction_handler(conn) as commit:
+    with db.conn_transaction_sql_handler(conn) as sql_execute:
         for row in rows:
             row, contact_data = preprocess_row(row, CANDIDATE_CONTACT_SF_FIELDS, log)
             candidate_id = row['candidate_id']
@@ -200,8 +200,7 @@ def update_candidate_contacts(conn, sf_url, sf_token, log):
                     action = 'created'
                 else:
                     action, sf_id, data_hash = upsert_object('Contact', f'Id/{sf_id}', contact_data, sf_url, sf_token, *candidate_ids_sf_ids[candidate_id])
-                update_vhskeelz_id_sf_id(conn, 'candidate_contact', candidate_id, sf_id, candidate_ids_sf_ids, data_hash)
-                commit()
+                update_vhskeelz_id_sf_id(sql_execute, 'candidate_contact', candidate_id, sf_id, candidate_ids_sf_ids, data_hash)
                 log(f'candidate_id {row["candidate_id"]}: {action} ({sf_id})')
             except Exception as e:
                 ok = False
@@ -224,7 +223,7 @@ def update_position_cases(conn, sf_url, sf_token, log):
     with conn.begin():
         position_ids_sf_ids = get_vhskeelz_ids_salesforce_ids(conn, 'position_case')
         rows = list(conn.execute(f'SELECT {sql_fields} FROM skeelz_export_positions'))
-    with conn_transaction_handler(conn) as commit:
+    with db.conn_transaction_sql_handler(conn) as sql_execute:
         for row in rows:
             row, case_data = preprocess_row(row, POSITION_CASE_SF_FIELDS, log)
             position_id = row['position_id']
@@ -246,26 +245,10 @@ def update_position_cases(conn, sf_url, sf_token, log):
                     action = 'created'
                 else:
                     action, sf_id, data_hash = upsert_object('Case', f'Id/{sf_id}', case_data, sf_url, sf_token, *position_ids_sf_ids[position_id])
-                update_vhskeelz_id_sf_id(conn, 'position_case', position_id, sf_id, position_ids_sf_ids, data_hash)
-                commit()
+                update_vhskeelz_id_sf_id(sql_execute, 'position_case', position_id, sf_id, position_ids_sf_ids, data_hash)
                 log(f'position_id {position_id}: {action} ({sf_id})')
             except Exception as e:
                 raise Exception(f'Failed to update position_id {position_id}') from e
-
-
-@contextlib.contextmanager
-def conn_transaction_handler(conn):
-    last_commit = time.time()
-    with conn.begin() as txn:
-
-        def commit(force=False):
-            if force or time.time() - last_commit > 120:
-                txn.commit()
-
-        try:
-            yield commit
-        finally:
-            commit(True)
 
 
 def update_company_accounts(conn, sf_url, sf_token, log):
@@ -276,7 +259,7 @@ def update_company_accounts(conn, sf_url, sf_token, log):
                 SELECT "Company id" "companyId", "Company name" company_name, ROW_NUMBER() OVER(PARTITION BY "Company id") AS rn FROM skeelz_export_positions
             ) SELECT "companyId", company_name FROM RankedItems WHERE rn = 1 and company_name != 'null';
         '''))
-    with conn_transaction_handler(conn) as commit:
+    with db.conn_transaction_sql_handler(conn) as sql_execute:
         for row in rows:
             row, account_data = preprocess_row(row, COMPANY_ACCOUNT_SF_FIELDS, log)
             company_name, company_id = row['company_name'], row['companyId']
@@ -321,8 +304,7 @@ def update_company_accounts(conn, sf_url, sf_token, log):
                     action = 'created'
                 else:
                     action, sf_id, data_hash = upsert_object('Account', f'Id/{sf_id}', account_data, sf_url, sf_token, *company_ids_sf_ids[company_id])
-                update_vhskeelz_id_sf_id(conn, 'company_account', company_id, sf_id, company_ids_sf_ids, data_hash)
-                commit()
+                update_vhskeelz_id_sf_id(sql_execute, 'company_account', company_id, sf_id, company_ids_sf_ids, data_hash)
                 log(f'company_id {company_id}: {action} ({sf_id})')
             except Exception as e:
                 raise Exception(f'Failed to process company_id {company_id}') from e
