@@ -16,6 +16,16 @@ def get_db_engine():
     )
 
 
+def execute_sqls(conn, sqls):
+    if sqls:
+        sql = '\n'.join(sqls)
+        try:
+            with conn.begin():
+                conn.execute(sql)
+        except Exception as e:
+            raise Exception(f'Error executing sql:\n{sql}') from e
+
+
 @contextlib.contextmanager
 def conn_transaction_sql_handler(conn):
     state = {
@@ -29,20 +39,14 @@ def conn_transaction_sql_handler(conn):
             state['first_execute'] = time.time()
         if time.time() - state['first_execute'] > 60 * 60 * 5:
             force_commit = True
+        assert isinstance(sql, str), f'sql_execute argument must be a string, not {type(sql)}: {sql}'
         state['sqls'].append(sql)
         if force_commit or time.time() - state['last_commit'] > 120:
-            sql = '\n'.join(state['sqls'])
-            try:
-                with conn.begin():
-                    conn.execute('\n'.join(state['sqls']))
-            except Exception as e:
-                raise Exception(f'Error executing sql:\n{sql}') from e
+            execute_sqls(conn, state['sqls'])
             state['sqls'] = []
             state['last_commit'] = time.time()
 
     try:
         yield sql_execute
     finally:
-        if state['sqls']:
-            with conn.begin():
-                conn.execute('\n'.join(state['sqls']))
+        execute_sqls(conn, state['sqls'])
