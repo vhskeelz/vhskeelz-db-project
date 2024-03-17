@@ -31,8 +31,12 @@ def conn_transaction_sql_handler(conn):
             force_commit = True
         state['sqls'].append(sql)
         if force_commit or time.time() - state['last_commit'] > 120:
-            with conn.begin():
-                conn.execute('\n'.join(state['sqls']))
+            sql = '\n'.join(state['sqls'])
+            try:
+                with conn.begin():
+                    conn.execute('\n'.join(state['sqls']))
+            except Exception as e:
+                raise Exception(f'Error executing sql:\n{sql}') from e
             state['sqls'] = []
             state['last_commit'] = time.time()
 
