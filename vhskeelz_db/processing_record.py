@@ -29,7 +29,7 @@ def start(process_name, process_id):
 
 
 def log(sql_execute, process_name, process_id, log_):
-    log_ = log_.replace("'", "''")
+    log_ = log_.replace("'", "''").replace('%', '%%')
     now = datetime.datetime.now().isoformat()
     sql_execute(dedent(f'''
         insert into processing_record_log (process_id, process_name, log, log_at) values ('{process_id}', '{process_name}', '{log_}', '{now}');
