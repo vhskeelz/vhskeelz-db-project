@@ -2,6 +2,7 @@ import os
 import csv
 import time
 import tempfile
+import traceback
 import contextlib
 
 import backoff
@@ -127,8 +128,14 @@ def extract_skeelz_exports(log, only_table_name=None, cache=None):
             continue
         target_filename = os.path.join(config.EXTRACT_DATA_PATH, f'{table_name}.csv')
         log(f'Downloading {table_name} to {target_filename}')
-        download_post_streaming(table_config['url'], target_filename, cookies={c['name']: c['value'] for c in cookies})
-        yield table_name
+        try:
+            download_post_streaming(table_config['url'], target_filename, cookies={c['name']: c['value'] for c in cookies})
+            yield table_name
+        except:
+            if table_config.get('on_failure') == 'skip':
+                log(f'Failed to download {table_name}, but on_failure is set to "skip", so skipping...\n{traceback.format_exc()}')
+            else:
+                raise
 
 
 def main(log, only_table_name=None, cache=None, only_table_types=None):
