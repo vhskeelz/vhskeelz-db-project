@@ -179,8 +179,13 @@ def soql_query(soql, sf_url, sf_token):
 def update_candidate_contacts(conn, sf_url, sf_token, log):
     with conn.begin():
         candidate_ids_sf_ids = get_vhskeelz_ids_salesforce_ids(conn, 'candidate_contact')
-        # TODO: change to skeelz_export_candidates once it has candidate_id availalbe
-        rows = list(conn.execute(f'select email, first_name, last_name, candidate_id, gender, location, phone_number from vehadarta_candidate_data_uniques_candidates'))
+        rows = list(conn.execute('''
+            select
+                "Email" email, "Candidate first name" first_name, "Candidate last name" last_name,
+                "Candidate id" candidate_id, "Gender" gender, "Candidate location" location,
+                "Phone number" phone_number
+            from skeelz_export_candidates
+        '''))
     with db.conn_transaction_sql_handler(conn) as sql_execute:
         for row in rows:
             row, contact_data = preprocess_row(row, CANDIDATE_CONTACT_SF_FIELDS, log)
