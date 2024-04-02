@@ -14,17 +14,17 @@ from . import config, download_position_candidate_cv, load_data
 # we use this to ensure that the tables we use are updated before running
 DEPENDANT_TABLES = {
     t: t for t in [
-        'vehadarta_positions_skills',
-        'vehadarta_company_and_company_ta',
-        'vehadarta_candidate_offers_list_only_for_mailing',
         'smoove_blocklist',
         'aggregation_candidates',
         'aggregation_positions',
         'aggregation_candidate_positions',
-
         'skeelz_export_positions',
+        'skeelz_export_candidates_to_positions',
+        'skeelz_export_candidates'
     ]
 }
+
+FIT_PERCENTAGE_SQL = '''CAST(replace(ctp."Candidate-Position fit rate", '%', '') AS FLOAT) / 100'''
 
 
 def get_dry_run_save_path(mailing_type):
@@ -92,7 +92,7 @@ def dry_run_save_rows(log, mailing_type, grouped_rows, mail_data):
 def get_fit_desc_sql_interested_fit_percentage_cases(mailing_config):
     cases = []
     for key, from_to in config.CANDIDATE_OFFERS_MAILING_CONFIG['fit_percentages'].items():
-        cases.append(f'when cast(l."fitPercentage" as float) > {from_to[0]} and cast(l."fitPercentage" as float) <= {from_to[1]} then \'{mailing_config["fit_labels"][key]}\'')
+        cases.append(f'when {FIT_PERCENTAGE_SQL} > {from_to[0]} and {FIT_PERCENTAGE_SQL} <= {from_to[1]} then \'{mailing_config["fit_labels"][key]}\'')
     return '\n'.join(cases)
 
 
@@ -101,7 +101,7 @@ def get_fit_desc_sql(mailing_type):
     if mailing_type == 'num_fits':
         return dedent(f'''
             case
-                when cast(l."fitPercentage" as float) < {mailing_config["high_min_fit_percentage"]} then 'medium'
+                when {FIT_PERCENTAGE_SQL} < {mailing_config["high_min_fit_percentage"]} then 'medium'
                 else 'high'
             end
         ''')
@@ -126,10 +126,10 @@ def get_where_sql(mailing_type):
     mailing_config = config.CANDIDATE_OFFERS_MAILING_CONFIG[mailing_type]
     if mailing_type == 'num_fits':
         return dedent(f'''
-            l."fitPercentage" != 'null'
-            and cast(l."fitPercentage" as float) >= {mailing_config["medium_min_fit_percentage"]}
-            and cast(l."fitPercentage" as float) <= 1
-            and l.candidate_id || '_' || l."positionOfferId" not in (
+            and ctp."Candidate-Position fit rate" != 'null' and ctp."Candidate-Position fit rate" is not null
+            and {FIT_PERCENTAGE_SQL} >= {mailing_config["medium_min_fit_percentage"]}
+            and {FIT_PERCENTAGE_SQL} <= 1
+            and c."Candidate id" || '_' || ctp."Position Id" not in (
                 select candidate_id || '_' || "positionOfferId" 
                 from candidate_offers_num_fits_mailing_status
                 where status = 'sent'
@@ -137,8 +137,8 @@ def get_where_sql(mailing_type):
         ''')
     elif mailing_type == 'interested':
         return dedent('''
-            l."Interested" = 'Yes'
-            and l.candidate_id || '_' || l."positionOfferId" not in (
+            and ctp."Candidate-Position interested" = '1'
+            and c."Candidate id" || '_' || ctp."Position Id" not in (
                 select candidate_id || '_' || "positionOfferId" 
                 from candidate_offers_interested_mailing_status
                 where status = 'sent'
@@ -146,10 +146,10 @@ def get_where_sql(mailing_type):
         ''')
     elif mailing_type == 'new_matches':
         return dedent(f'''
-            l."fitPercentage" != 'null'
-            and cast(l."fitPercentage" as float) >= {mailing_config["min_fit_percentage"]}
-            and cast(l."fitPercentage" as float) <= 1
-            and l.candidate_id || '_' || l."positionOfferId" not in (
+            and ctp."Candidate-Position fit rate" != 'null' and ctp."Candidate-Position fit rate" is not null
+            and {FIT_PERCENTAGE_SQL} >= {mailing_config["min_fit_percentage"]}
+            and {FIT_PERCENTAGE_SQL} <= 1
+            and c."Candidate id" || '_' || ctp."Position Id" not in (
                 select candidate_id || '_' || "positionOfferId" 
                 from candidate_offers_new_matches_mailing_status
                 where status = 'sent'
@@ -161,11 +161,11 @@ def get_where_sql(mailing_type):
 
 def get_group_key(row, mailing_type):
     if mailing_type == 'num_fits':
-        return row['company_email'], row['position_id'], row['city']
+        return ','.join(row['company_emails_names'].keys()), row['position_id'], row['city']
     elif mailing_type == 'interested':
-        return row['company_email']
+        return ','.join(row['company_emails_names'].keys())
     elif mailing_type == 'new_matches':
-        return row['company_email']
+        return ','.join(row['company_emails_names'].keys())
     elif mailing_type == 'new_position':
         return ','.join(row['company_emails_names'].keys()), row['position_id']
     else:
@@ -174,8 +174,8 @@ def get_group_key(row, mailing_type):
 
 def get_email_field(mailing_type):
     return {
-        'num_fits': 'company_email',
-        'interested': 'company_email',
+        'num_fits': 'company_emails_names',
+        'interested': 'company_emails_names',
         'new_matches': 'candidate_email',
         'new_position': 'company_emails_names',
     }[mailing_type]
@@ -195,7 +195,7 @@ def get_mail_data(grouped_rows, mailing_type, log):
             first_row = rows[0]
             data.append({
                 "from_email": from_email,
-                "to_emails": first_row[get_email_field(mailing_type)],
+                "to_emails": list(set(first_row[get_email_field(mailing_type)].keys())),
                 "template_id": template_id,
                 "dynamic_template_data": {
                     "company_name": first_row['company_name'],
@@ -223,7 +223,7 @@ def get_mail_data(grouped_rows, mailing_type, log):
                 position_candidate_ids.add((row['position_id'], row['candidate_id']))
                 data.append({
                     "from_email": from_email,
-                    "to_emails": row[get_email_field(mailing_type)],
+                    "to_emails": list(set(row[get_email_field(mailing_type)].keys())),
                     "template_id": template_id,
                     "pdf_attachment_filename": cv_filename,
                     'pdf_attachment_name': f"{row['candidate_name']} - {row['position_name']}.pdf",
@@ -244,7 +244,6 @@ def get_mail_data(grouped_rows, mailing_type, log):
             fits = {}
             for row in rows:
                 fits[row['position_name']] = {
-                    "date": row['creation_date'].strftime('%d/%m/%Y'),
                     "name": row['position_name'],
                     "fit": row['fit_desc']
                 }
@@ -402,8 +401,8 @@ def get_candidate_position_rows(log, mailing_type):
         with conn.begin():
             log("Fetching candidate positions...")
             details_url_sql = config.CANDIDATE_POSITION_CV_URL_TEMPLATE.format(
-                position_id="' || l.\"positionOfferId\" || '",
-                candidate_id="' || l.\"candidate_id\" || '",
+                position_id="' || ctp.\"Position Id\" || '",
+                candidate_id="' || c.\"Candidate id\" || '",
             )
             fit_desc_sql = get_fit_desc_sql(mailing_type)
             where_sql = get_where_sql(mailing_type)
@@ -412,37 +411,41 @@ def get_candidate_position_rows(log, mailing_type):
                     'candidate_id': row.candidate_id,
                     'position_id': row.position_id,
                     'candidate_name': row.candidate_name,
-                    'company_email': row.ta_email,
-                    'company_name': row.ta_name,
+                    'company_emails_names': get_ta_emails_names(row.ta_emails, row.ta_firstnames, row.ta_lastnames),
                     'position_name': row.position_name,
                     'city': row.city,
                     'details_url': row.details_url,
                     'fit_desc': row.fit_desc,
                     'candidate_email': row.email,
-                    'creation_date': datetime.datetime.strptime(row.date_created, '%b %d, %Y, %I:%M:%S %p')
                 }
                 for row
                 in conn.execute(dedent(f'''
                     with numbered_positions as (
-                        select *, row_number() over (partition by "position_id" order by "position_id") as rn
-                        from {DEPENDANT_TABLES['vehadarta_positions_skills']}
-                        where active != '0'
+                        select *, row_number() over (partition by "Position id" order by "Position id") as rn
+                        from {DEPENDANT_TABLES['skeelz_export_positions']}
+                        where "Position active status" = 'Open'
                     )
                     select
-                        l.candidate_id, l."positionOfferId" position_id, l."Candidate name" candidate_name,
-                        t.ta_email, t.ta_name, p.position_name, l."fitPercentage" fit_percentage, p.city,
-                        l.email, p."dateCreated" date_created,
+                        c."Candidate id" candidate_id, ctp."Position Id" position_id,
+                        c."Candidate first name" || ' ' || c."Candidate last name" candidate_name,
+                        p."Company TA manager email" ta_emails,
+                        p."Company TA manager first name" ta_first_names,
+                        p."Company TA manager last name" ta_last_names,
+                        p."Position name" position_name,
+                        {FIT_PERCENTAGE_SQL} fit_percentage,
+                        p."City" city,
+                        c."Email" email,
                         '{details_url_sql}' details_url,
-                        {fit_desc_sql} fit_desc,
-                        count(1) cnt
-                    from {DEPENDANT_TABLES['vehadarta_candidate_offers_list_only_for_mailing']} l
-                    join numbered_positions p on l."positionOfferId" = p.position_id and p.rn = 1
-                    join {DEPENDANT_TABLES['vehadarta_company_and_company_ta']} t
-                        on p."companyId" != 'null' and (p."companyId" = t."companyId" or p."companyId" = t.comp_id)
-                    where {where_sql}
-                    group by
-                        l.candidate_id, l."positionOfferId", l."Candidate name", t.ta_email, t.ta_name, p.position_name, 
-                        l."fitPercentage", p.city, l.email, p."dateCreated"
+                        {fit_desc_sql} fit_desc
+                    from
+                        {DEPENDANT_TABLES['skeelz_export_candidates_to_positions']} ctp,
+                        {DEPENDANT_TABLES['skeelz_export_candidates']} c,
+                        numbered_positions p
+                    where
+                        ctp."Candidate Id" = c."Candidate id"
+                        and ctp."Position Id" = p."Position id"
+                        and p.rn = 1
+                        {where_sql}
                 '''))
             ]
 
