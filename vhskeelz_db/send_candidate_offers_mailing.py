@@ -24,7 +24,7 @@ DEPENDANT_TABLES = {
     ]
 }
 
-FIT_PERCENTAGE_SQL = '''CAST(replace(ctp."Candidate-Position fit rate", '%', '') AS FLOAT) / 100'''
+FIT_PERCENTAGE_SQL = '''CAST(replace(ctp."Candidate-Position fit rate", '%%', '') AS FLOAT) / 100'''
 
 
 def get_dry_run_save_path(mailing_type):
@@ -163,9 +163,9 @@ def get_group_key(row, mailing_type):
     if mailing_type == 'num_fits':
         return ','.join(row['company_emails_names'].keys()), row['position_id'], row['city']
     elif mailing_type == 'interested':
-        return ','.join(row['company_emails_names'].keys())
+        return (','.join(row['company_emails_names'].keys()), )
     elif mailing_type == 'new_matches':
-        return ','.join(row['company_emails_names'].keys())
+        return (row['candidate_email'], )
     elif mailing_type == 'new_position':
         return ','.join(row['company_emails_names'].keys()), row['position_id']
     else:
@@ -406,47 +406,51 @@ def get_candidate_position_rows(log, mailing_type):
             )
             fit_desc_sql = get_fit_desc_sql(mailing_type)
             where_sql = get_where_sql(mailing_type)
+            sql = f'''
+                with numbered_positions as (
+                    select *, row_number() over (partition by "Position id" order by "Position id") as rn
+                    from {DEPENDANT_TABLES['skeelz_export_positions']}
+                    where "Position active status" = 'Open'
+                )
+                select
+                    c."Candidate id" candidate_id, ctp."Position Id" position_id,
+                    c."Candidate first name" || ' ' || c."Candidate last name" candidate_name,
+                    p."Company TA manager email" ta_emails,
+                    p."Company TA manager first name" ta_firstnames,
+                    p."Company TA manager last name" ta_lastnames,
+                    p."Company name" company_name,
+                    p."Position name" position_name,
+                    {FIT_PERCENTAGE_SQL} fit_percentage,
+                    p."City" city,
+                    c."Email" email,
+                    '{details_url_sql}' details_url,
+                    {fit_desc_sql} fit_desc
+                from
+                    {DEPENDANT_TABLES['skeelz_export_candidates_to_positions']} ctp,
+                    {DEPENDANT_TABLES['skeelz_export_candidates']} c,
+                    numbered_positions p
+                where
+                    ctp."Candidate Id" = c."Candidate id"
+                    and ctp."Position Id" = p."Position id"
+                    and p.rn = 1
+                    {where_sql}
+            '''
+            # print(sql)
             return [
                 {
                     'candidate_id': row.candidate_id,
                     'position_id': row.position_id,
-                    'candidate_name': row.candidate_name,
+                    'candidate_name': row.candidate_name or '',
+                    "company_name": row.company_name or '',
                     'company_emails_names': get_ta_emails_names(row.ta_emails, row.ta_firstnames, row.ta_lastnames),
-                    'position_name': row.position_name,
-                    'city': row.city,
+                    'position_name': row.position_name or '',
+                    'city': row.city or '',
                     'details_url': row.details_url,
                     'fit_desc': row.fit_desc,
                     'candidate_email': row.email,
                 }
                 for row
-                in conn.execute(dedent(f'''
-                    with numbered_positions as (
-                        select *, row_number() over (partition by "Position id" order by "Position id") as rn
-                        from {DEPENDANT_TABLES['skeelz_export_positions']}
-                        where "Position active status" = 'Open'
-                    )
-                    select
-                        c."Candidate id" candidate_id, ctp."Position Id" position_id,
-                        c."Candidate first name" || ' ' || c."Candidate last name" candidate_name,
-                        p."Company TA manager email" ta_emails,
-                        p."Company TA manager first name" ta_first_names,
-                        p."Company TA manager last name" ta_last_names,
-                        p."Position name" position_name,
-                        {FIT_PERCENTAGE_SQL} fit_percentage,
-                        p."City" city,
-                        c."Email" email,
-                        '{details_url_sql}' details_url,
-                        {fit_desc_sql} fit_desc
-                    from
-                        {DEPENDANT_TABLES['skeelz_export_candidates_to_positions']} ctp,
-                        {DEPENDANT_TABLES['skeelz_export_candidates']} c,
-                        numbered_positions p
-                    where
-                        ctp."Candidate Id" = c."Candidate id"
-                        and ctp."Position Id" = p."Position id"
-                        and p.rn = 1
-                        {where_sql}
-                '''))
+                in conn.execute(dedent(sql))
             ]
 
 
