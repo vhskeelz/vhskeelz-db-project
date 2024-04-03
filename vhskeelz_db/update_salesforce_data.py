@@ -125,7 +125,7 @@ def get_data_hash(data):
     return hashlib.sha256(json.dumps(data, sort_keys=True).encode()).hexdigest()
 
 
-def upsert_object(object_name, key_spec, data, sf_url, sf_token, existing_sf_id, existing_data_hash):
+def upsert_object(object_name, key_spec, data, sf_url, sf_token, existing_sf_id, existing_data_hash, log):
     data_hash = get_data_hash(data)
     if data_hash == existing_data_hash:
         return 'unchanged', existing_sf_id, existing_data_hash
@@ -139,6 +139,13 @@ def upsert_object(object_name, key_spec, data, sf_url, sf_token, existing_sf_id,
             return 'updated', res.json()['id'], data_hash
         elif res.status_code == 201:
             return 'created', res.json()['id'], data_hash
+        elif res.status_code == 400:
+            error_codes = [e['errorCode'] for e in res.json()]
+            if error_codes == ['ENTITY_IS_DELETED']:
+                log(f'WARNING: entity is deleted in SF, cannot update: {object_name}/{key_spec}')
+                return 'updated', existing_sf_id, data_hash
+            else:
+                raise Exception(f"Unexpected 400 error: {res.content}")
         else:
             raise Exception(f"Unexpected status_code: {res.status_code}\n{res.content}")
 
@@ -204,7 +211,7 @@ def update_candidate_contacts(conn, sf_url, sf_token, log):
                     sf_id, data_hash = create_object('Contact', contact_data, sf_url, sf_token)
                     action = 'created'
                 else:
-                    action, sf_id, data_hash = upsert_object('Contact', f'Id/{sf_id}', contact_data, sf_url, sf_token, *candidate_ids_sf_ids[candidate_id])
+                    action, sf_id, data_hash = upsert_object('Contact', f'Id/{sf_id}', contact_data, sf_url, sf_token, *candidate_ids_sf_ids[candidate_id], log)
                 update_vhskeelz_id_sf_id(sql_execute, 'candidate_contact', candidate_id, sf_id, candidate_ids_sf_ids, data_hash)
                 log(f'candidate_id {row["candidate_id"]}: {action} ({sf_id})')
             except Exception as e:
@@ -249,7 +256,7 @@ def update_position_cases(conn, sf_url, sf_token, log):
                     sf_id, data_hash = create_object('Case', case_data, sf_url, sf_token)
                     action = 'created'
                 else:
-                    action, sf_id, data_hash = upsert_object('Case', f'Id/{sf_id}', case_data, sf_url, sf_token, *position_ids_sf_ids[position_id])
+                    action, sf_id, data_hash = upsert_object('Case', f'Id/{sf_id}', case_data, sf_url, sf_token, *position_ids_sf_ids[position_id], log)
                 update_vhskeelz_id_sf_id(sql_execute, 'position_case', position_id, sf_id, position_ids_sf_ids, data_hash)
                 log(f'position_id {position_id}: {action} ({sf_id})')
             except Exception as e:
@@ -308,7 +315,7 @@ def update_company_accounts(conn, sf_url, sf_token, log):
                     sf_id, data_hash = create_object('Account', account_data, sf_url, sf_token)
                     action = 'created'
                 else:
-                    action, sf_id, data_hash = upsert_object('Account', f'Id/{sf_id}', account_data, sf_url, sf_token, *company_ids_sf_ids[company_id])
+                    action, sf_id, data_hash = upsert_object('Account', f'Id/{sf_id}', account_data, sf_url, sf_token, *company_ids_sf_ids[company_id], log)
                 update_vhskeelz_id_sf_id(sql_execute, 'company_account', company_id, sf_id, company_ids_sf_ids, data_hash)
                 log(f'company_id {company_id}: {action} ({sf_id})')
             except Exception as e:
