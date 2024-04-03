@@ -15,7 +15,7 @@ on:
 jobs:
   send_manual_mailing:
     concurrency:
-      group: mailing-${{ inputs.mailing_type }}
+      group: db-update
     runs-on: ubuntu-22.04
     steps:
       - name: checkout

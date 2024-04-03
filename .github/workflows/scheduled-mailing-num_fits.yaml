@@ -7,7 +7,7 @@ on:
 jobs:
   scheduled_mailing_num_fits:
     concurrency:
-      group: mailing-num_fits
+      group: db-update
     runs-on: ubuntu-22.04
     steps:
       - name: checkout

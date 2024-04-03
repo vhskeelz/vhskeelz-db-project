@@ -18,8 +18,8 @@ on:
         default: false
         description: "Skip the update salesforce?"
   schedule:
-    # Daily 00:22 (UTC) == 03:22 (Israel)
-    - cron: '0 22 * * *'
+    # Hourly
+    - cron: '22 * * * *'
 env:
   PROCESSING_RECORD_ENABLED: "true"
   PROCESSING_RECORD_ID: ${{ github.run_id }}
