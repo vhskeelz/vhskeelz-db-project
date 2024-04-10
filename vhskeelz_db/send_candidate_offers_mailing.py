@@ -186,7 +186,7 @@ def download_cvs(position_candidate_ids, log):
     download_position_candidate_cv.main_multi(log, position_candidate_ids, save_to_gcs=True)
 
 
-def get_mail_data(grouped_rows, mailing_type, log):
+def get_mail_data(grouped_rows, mailing_type, log, skip_download_cvs=False):
     data = []
     from_email = config.CANDIDATE_OFFERS_MAILING_CONFIG[mailing_type]['from_email']
     template_id = config.CANDIDATE_OFFERS_MAILING_CONFIG[mailing_type]['template_id']
@@ -213,12 +213,12 @@ def get_mail_data(grouped_rows, mailing_type, log):
         for rows in grouped_rows.values():
             for row in rows:
                 position_candidate_ids.add((row['position_id'], row['candidate_id']))
-        if position_candidate_ids:
+        if not skip_download_cvs and position_candidate_ids:
             download_cvs(position_candidate_ids, log)
         for rows in grouped_rows.values():
             for row in rows:
                 cv_filename = os.path.join(config.DATA_DIR, 'candidate_offers_interested_mailing', 'cv', f'{row["position_id"]}_{row["candidate_id"]}.pdf')
-                if not download_position_candidate_cv.download_from_gcs(f'cv/{row["position_id"]}_{row["candidate_id"]}.pdf', cv_filename):
+                if not skip_download_cvs and not download_position_candidate_cv.download_from_gcs(f'cv/{row["position_id"]}_{row["candidate_id"]}.pdf', cv_filename):
                     cv_filename = None
                 position_candidate_ids.add((row['position_id'], row['candidate_id']))
                 data.append({
@@ -300,30 +300,31 @@ def send_mails(log, mailing_type, mail_data, allow_send, test_email_to, test_ema
             break
         from_email = row['from_email']
         to_emails = row['to_emails'] if allow_send else test_email_to
-        template_id = row['template_id']
-        dynamic_template_data = get_dynamic_template_data(mailing_type, row)
-        log(f'Sending mail from {from_email} to {to_emails} with template_id {template_id} and dynamic_template_data {dynamic_template_data}')
-        message = Mail(from_email=from_email, to_emails=to_emails)
-        message.add_bcc(config.CANDIDATE_OFFERS_MAILING_CONFIG['bcc'])
-        message.dynamic_template_data = dynamic_template_data
-        message.template_id = template_id
-        if row.get('pdf_attachment_filename') and row.get('pdf_attachment_name'):
-            with open(row['pdf_attachment_filename'], 'rb') as f:
-                data = f.read()
-                f.close()
-            encoded_file = base64.b64encode(data).decode()
-            message.attachment = Attachment(
-                FileContent(encoded_file),
-                FileName(row['pdf_attachment_name']),
-                FileType('application/pdf'),
-                Disposition('attachment')
-            )
-        message.asm = Asm(int(config.SENDGRID_UNSUSCRIBE_GROUP_ID))
-        sendgrid_client = SendGridAPIClient(config.SENDGRID_API_KEY)
-        sendgrid_client.send(message)
-        if allow_send or test_email_update_db:
-            log(f'Updating {len(row["candidate_position_ids"])} db statuses to sent')
-            db_insert_statuses(mailing_type, row['candidate_position_ids'], 'sent')
+        if to_emails:
+            template_id = row['template_id']
+            dynamic_template_data = get_dynamic_template_data(mailing_type, row)
+            log(f'Sending mail from {from_email} to {to_emails} with template_id {template_id} and dynamic_template_data {dynamic_template_data}')
+            message = Mail(from_email=from_email, to_emails=to_emails)
+            message.add_bcc(config.CANDIDATE_OFFERS_MAILING_CONFIG['bcc'])
+            message.dynamic_template_data = dynamic_template_data
+            message.template_id = template_id
+            if row.get('pdf_attachment_filename') and row.get('pdf_attachment_name'):
+                with open(row['pdf_attachment_filename'], 'rb') as f:
+                    data = f.read()
+                    f.close()
+                encoded_file = base64.b64encode(data).decode()
+                message.attachment = Attachment(
+                    FileContent(encoded_file),
+                    FileName(row['pdf_attachment_name']),
+                    FileType('application/pdf'),
+                    Disposition('attachment')
+                )
+            message.asm = Asm(int(config.SENDGRID_UNSUSCRIBE_GROUP_ID))
+            sendgrid_client = SendGridAPIClient(config.SENDGRID_API_KEY)
+            sendgrid_client.send(message)
+            if allow_send or test_email_update_db:
+                log(f'Updating {len(row["candidate_position_ids"])} db statuses to sent')
+                db_insert_statuses(mailing_type, row['candidate_position_ids'], 'sent')
 
 
 def db_insert_statuses(mailing_type, candidate_position_ids, status):
@@ -377,21 +378,19 @@ def remove_blocklists(log, mailing_type, rows):
             blocked_candidate_id += 1
         elif row['position_id'].strip() in block_position_id:
             blocked_position_id += 1
-        elif email_field != 'company_emails_names' and row[email_field].strip() in smoove_blocklist_emails:
+        elif email_field != 'company_emails_names' and row[email_field].strip() and row[email_field].strip() in smoove_blocklist_emails:
             blocked_smoove_email += 1
         else:
             if email_field == 'company_emails_names':
                 new_email_names = {}
                 for email, name in row[email_field].items():
-                    if email.strip() in smoove_blocklist_emails:
+                    if email.strip() and email.strip() in smoove_blocklist_emails:
                         blocked_smoove_email += 1
                     else:
                         new_email_names[email.strip()] = name
                 row[email_field] = new_email_names
-                if len(row[email_field]) < 1:
-                    row = None
-            if row:
-                valid_rows.append(row)
+            # a row with no emails is still valid because we might not send the email to these emails depending on other conditions later
+            valid_rows.append(row)
     log(f'Blocked {blocked_candidate_id_position_id} candidate_id_position_id, {blocked_candidate_id} candidate_id, {blocked_position_id} position_id, {blocked_smoove_email} smoove emails')
     return valid_rows
 
@@ -510,7 +509,7 @@ def get_new_position_candidate_position_rows(log, with_sent=False):
 
 
 def main(log, mailing_type, dry_run=False, allow_send=False, test_email_to=None, test_email_limit=None, test_email_update_db=False,
-         only_candidate_position_ids=None, ensure_updated_tables=False, with_sent=False):
+         only_candidate_position_ids=None, ensure_updated_tables=False, with_sent=False, skip_download_cvs=False):
     if with_sent:
         assert dry_run or not allow_send
     if ensure_updated_tables:
@@ -529,7 +528,7 @@ def main(log, mailing_type, dry_run=False, allow_send=False, test_email_to=None,
         group_key = ';;'.join(get_group_key(row, mailing_type))
         grouped_rows.setdefault(group_key, []).append(row)
     log(f"Grouped to {len(grouped_rows)} groups")
-    mail_data = get_mail_data(grouped_rows, mailing_type, log)
+    mail_data = get_mail_data(grouped_rows, mailing_type, log, skip_download_cvs=skip_download_cvs)
     if dry_run:
         log("Dry run, not sending emails")
         dry_run_save_rows(log, mailing_type, grouped_rows, mail_data)
