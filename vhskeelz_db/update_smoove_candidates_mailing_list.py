@@ -45,6 +45,7 @@ def process_output_row(row):
 
 
 def iterate_candidates():
+    candidates = []
     with get_db_engine().connect() as conn:
         with conn.begin():
             for row in conn.execute("""
@@ -52,7 +53,8 @@ def iterate_candidates():
                        "Phone number" phone_number, "Candidate location" city, "Gender" gender
                 from skeelz_export_candidates
             """):
-                yield process_input_row(dict(row))
+                candidates.append(process_input_row(dict(row)))
+    return candidates
 
 
 def case_insensitive_get(d, key):
