@@ -17,6 +17,11 @@ on:
         required: false
         default: false
         description: "Skip the update salesforce?"
+      skip_send_mailings:
+        type: boolean
+        required: false
+        default: false
+        description: "Skip the send mailings?"
   schedule:
     # Hourly
     - cron: '22 * * * *'
@@ -27,6 +32,7 @@ env:
   SKIP_DB_UPDATE: ${{ inputs.skip_db_update || 'false' }}
   SKIP_UPDATE_SMOOVE: ${{ inputs.skip_update_smoove || 'false' }}
   SKIP_UPDATE_SALESFORCE: ${{ inputs.skip_update_salesforce || 'false' }}
+  SKIP_SEND_MAILINGS: ${{ inputs.skip_send_mailings || 'false' }}
 jobs:
   db_update:
     concurrency:
@@ -101,8 +107,33 @@ jobs:
         if: env.SKIP_UPDATE_SALESFORCE == 'true'
         run: echo "mock update salesforce"
 
+  send_mailings:
+    needs:
+      - db_update
+    runs-on: ubuntu-22.04
+    strategy:
+      matrix:
+        mailing_type: [interested, new_position, num_fits]
+    steps:
+      - name: checkout
+        uses: actions/checkout@v3
+        if: env.SKIP_SEND_MAILINGS != 'true'
+      - name: send mailing
+        uses: ./.github/actions/send-candidate-offers-mailing
+        if: env.SKIP_SEND_MAILINGS != 'true'
+        with:
+          run_args: "--test-email-to=default --test-email-update-db"
+          no_dry_run: "DANGER"
+          mailing_type: ${{ matrix.mailing_type }}
+          service_account_b64: ${{ secrets.SERVICE_ACCOUNT_B64 }}
+          processing_record_name: "${{ github.event_name }}-github_db_update-send-mailings-${{ matrix.mailing_type }}"
+          processing_record_id: ${{ github.run_id }}
+      - name: mock send mailings
+        if: env.SKIP_SEND_MAILINGS == 'true'
+        run: echo "mock send mailings - ${{ matrix.mailing_type }}"
+
   final:
-    needs: [update_smoove, update_salesforce]
+    needs: [update_smoove, update_salesforce, send_mailings]
     if: always()
     runs-on: ubuntu-22.04
     steps:
@@ -113,6 +144,10 @@ jobs:
           fi
           if [ "${{ needs.update_salesforce.result }}" != "success" ]; then
               echo "Update Salesforce failed"
+              exit 1
+          fi
+          if [ "${{ needs.send_mailings.result }}" != "success" ]; then
+              echo "Send mailings failed"
               exit 1
           fi
           echo "All jobs succeeded"

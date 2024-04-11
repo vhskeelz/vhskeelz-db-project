@@ -1,9 +1,10 @@
 name: Scheduled mailing - new_position
 on:
   workflow_dispatch:
-  schedule:
+# sent every hour from db update
+#  schedule:
     # Every day at 05:52 (UTC) == 08:52 (Israel)
-    - cron: '52 5 * * *'
+#    - cron: '52 5 * * *'
 jobs:
   scheduled_mailing_new_position:
     concurrency:
