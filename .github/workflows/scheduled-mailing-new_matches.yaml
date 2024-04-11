@@ -7,6 +7,8 @@ on:
 jobs:
   scheduled_mailing_new_matches:
     runs-on: ubuntu-22.04
+    concurrency:
+      group: mailing_new_matches
     steps:
       - name: checkout
         uses: actions/checkout@v3

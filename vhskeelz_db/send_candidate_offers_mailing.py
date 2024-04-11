@@ -476,7 +476,7 @@ def get_new_position_candidate_position_rows(log, with_sent=False):
                 extra_where = ''
             else:
                 extra_where = dedent('''
-                    and "Position id" in (
+                    and "Position id" not in (
                         select "positionOfferId"
                         from candidate_offers_new_position_mailing_status
                         where status = 'sent'
