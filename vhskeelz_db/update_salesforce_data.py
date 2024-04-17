@@ -144,6 +144,9 @@ def upsert_object(object_name, key_spec, data, sf_url, sf_token, existing_sf_id,
             if error_codes == ['ENTITY_IS_DELETED']:
                 log(f'WARNING: entity is deleted in SF, cannot update: {object_name}/{key_spec}')
                 return 'updated', existing_sf_id, data_hash
+            elif error_codes == ['CANNOT_EXECUTE_FLOW_TRIGGER']:
+                log(f'WARNING: cannot execute flow trigger: {object_name}/{key_spec}')
+                return 'updated', existing_sf_id, data_hash
             else:
                 raise Exception(f"Unexpected 400 error: {res.content}")
         else:
