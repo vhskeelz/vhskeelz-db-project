@@ -501,7 +501,7 @@ def get_new_position_candidate_position_rows(log, with_sent=False):
                         "Company TA manager email" ta_emails,
                         "Company TA manager first name" ta_firstnames, "Company TA manager last name" ta_lastnames
                     from {DEPENDANT_TABLES['skeelz_export_positions']}
-                    where "Position active status" != 'OnHold'
+                    where "Position active status" = 'Open'
                         {extra_where}
                     group by position_id, position_name, ta_emails, ta_firstnames, ta_lastnames
                 '''))
