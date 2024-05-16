@@ -30,11 +30,11 @@ runs:
         wget -O chrome.zip "${CHROME_URL}" &&\
         wget -O chromedriver.zip "${CHROMEDRIVER_URL}" &&\
         unzip chrome.zip &&\
-        sudo chown -R root:root chrome/chrome-linux64 &&\
-        sudo chmod +x chrome/chrome-linux64/chrome &&\
-        sudo ln -s `pwd`/chrome/chrome-linux64/chrome /usr/bin/chrome &&\
+        sudo chown -R root:root chrome-linux64 &&\
+        sudo chmod +x chrome-linux64/chrome &&\
+        sudo ln -s `pwd`/chrome-linux64/chrome /usr/bin/chrome &&\
         unzip chromedriver.zip &&\
-        sudo mv chromedriver/chromedriver-linux64/chromedriver /usr/local/bin/ &&\
+        sudo mv chromedriver-linux64/chromedriver /usr/local/bin/ &&\
         sudo chown root:root /usr/local/bin/chromedriver &&\
         sudo chmod +x /usr/local/bin/chromedriver
     - name: login to google and get secrets
