@@ -20,18 +20,21 @@ runs:
         cache: 'poetry'
     - name: install xvfb and chromedriver
       if: inputs.selenium == 'true'
-      env:
-        CHROME_VERSION: 114.0.5735.90
       shell: bash
       run: |
         sudo apt-get update &&\
         sudo apt-get install -y xvfb &&\
-        wget "https://dl.google.com/linux/chrome/deb/pool/main/g/google-chrome-stable/google-chrome-stable_${CHROME_VERSION}-1_amd64.deb" &&\
-        sudo dpkg -i google-chrome-stable_${CHROME_VERSION}-1_amd64.deb &&\
-        sudo apt-get install -f &&\
-        wget "https://chromedriver.storage.googleapis.com/${CHROME_VERSION}/chromedriver_linux64.zip" &&\
-        unzip chromedriver_linux64.zip &&\
-        sudo mv chromedriver /usr/local/bin/ &&\
+        GOOGLEJSON="$(curl https://googlechromelabs.github.io/chrome-for-testing/last-known-good-versions-with-downloads.json)" &&\
+        CHROME_URL="$(echo "${GOOGLEJSON}" | jq -r '.channels.Stable.downloads.chrome[] | select(.platform == "linux64") | .url')" &&\
+        CHROMEDRIVER_URL="$(echo "${GOOGLEJSON}" | jq -r '.channels.Stable.downloads.chromedriver[] | select(.platform == "linux64") | .url')" &&\
+        wget -O chrome.zip "${CHROME_URL}" &&\
+        wget -O chromedriver.zip "${CHROMEDRIVER_URL}" &&\
+        unzip chrome.zip &&\
+        sudo ln -s `pwd`/chrome/chrome-linux64/chrome /usr/bin/chrome &&\
+        sudo chown root:root /usr/bin/chrome &&\
+        sudo chmod +x /usr/bin/chrome &&\
+        unzip chromedriver.zip &&\
+        sudo mv chromedriver/chromedriver-linux64/chromedriver /usr/local/bin/ &&\
         sudo chown root:root /usr/local/bin/chromedriver &&\
         sudo chmod +x /usr/local/bin/chromedriver
     - name: login to google and get secrets
