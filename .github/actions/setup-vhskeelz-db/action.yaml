@@ -30,9 +30,9 @@ runs:
         wget -O chrome.zip "${CHROME_URL}" &&\
         wget -O chromedriver.zip "${CHROMEDRIVER_URL}" &&\
         unzip chrome.zip &&\
+        sudo chown -R root:root chrome/chrome-linux64 &&\
+        sudo chmod +x chrome/chrome-linux64/chrome &&\
         sudo ln -s `pwd`/chrome/chrome-linux64/chrome /usr/bin/chrome &&\
-        sudo chown root:root /usr/bin/chrome &&\
-        sudo chmod +x /usr/bin/chrome &&\
         unzip chromedriver.zip &&\
         sudo mv chromedriver/chromedriver-linux64/chromedriver /usr/local/bin/ &&\
         sudo chown root:root /usr/local/bin/chromedriver &&\
