@@ -76,6 +76,7 @@ def load_data(**kwargs):
 @click.option('--headless', is_flag=True)
 @click.option('--save-to-gcs', is_flag=True)
 @click.option('--force', is_flag=True)
+@click.option('--slow-network', is_flag=True)
 def download_position_candidate_cv(**kwargs):
     from . import download_position_candidate_cv
     with processing_record() as log:

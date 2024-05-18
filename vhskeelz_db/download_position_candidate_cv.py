@@ -1,5 +1,7 @@
 import os
+import time
 import json
+import shutil
 import datetime
 import tempfile
 import traceback
@@ -54,12 +56,22 @@ def get_driver(download_path, headless, proxy_server):
     if proxy_server:
         print(f'Using proxy server: {proxy_server}')
         chrome_options.add_argument(f'--proxy-server={proxy_server}')
+    chrome_options.set_capability("goog:loggingPrefs", {"performance": "ALL", "browser": "ALL"})
     return webdriver.Chrome(options=chrome_options)
 
 
 @contextmanager
-def driver_contextmanager(download_path, headless, proxy_server, set_trace):
+def driver_contextmanager(download_path, headless, proxy_server, set_trace, slow_network=False):
     driver = get_driver(download_path, headless, proxy_server)
+    driver.execute_cdp_cmd('Network.enable', {})
+    if slow_network:
+        driver.execute_cdp_cmd('Network.emulateNetworkConditions', {
+            'offline': False,
+            'latency': 600,  # ms
+            #                     kbps
+            'downloadThroughput': 50000 * 1024 / 8,
+            'uploadThroughput': 50000 * 1024 / 8
+        })
     try:
         yield driver
     except Exception:
@@ -121,7 +133,9 @@ def download_from_gcs(source_blob_name, destination_file_name):
 
 
 def download(log, driver, download_path, position_id, candidate_id, save_to_gcs=False):
-    WebDriverWait(driver, 10).until(EC.presence_of_element_located((By.XPATH, "//p[contains(., 'ייצוא פרטים')]"))).click()
+    elt = WebDriverWait(driver, 15).until(EC.presence_of_element_located((By.XPATH, "//p[contains(., 'ייצוא פרטים')]")))
+    time.sleep(2)
+    elt.click()
     WebDriverWait(driver, 20).until(lambda _: any(filename.endswith('.pdf') for filename in os.listdir(download_path)))
     filenames = [filename for filename in os.listdir(download_path) if filename.endswith('.pdf')]
     assert len(filenames) == 1
@@ -129,7 +143,7 @@ def download(log, driver, download_path, position_id, candidate_id, save_to_gcs=
     log(f"Downloaded CV filename: {filename}")
     os.makedirs(DOWNLOAD_DIRECTORY, exist_ok=True)
     target_filename = os.path.join(DOWNLOAD_DIRECTORY, f'{position_id}_{candidate_id}.pdf')
-    os.rename(os.path.join(download_path, filename), target_filename)
+    shutil.move(os.path.join(download_path, filename), target_filename)
     log(f'CV downloaded to {target_filename}')
     if save_to_gcs:
         upload_to_gcs(target_filename, f'cv/{position_id}_{candidate_id}.pdf')
@@ -160,13 +174,13 @@ def main_multi(log, position_candidate_ids, headless=False, proxy_server=None, s
                             raise
 
 
-def main(log, position_id, candidate_id, headless=False, proxy_server=None, set_trace=False, save_to_gcs=False, force=False):
+def main(log, position_id, candidate_id, headless=False, proxy_server=None, set_trace=False, save_to_gcs=False, force=False, slow_network=False):
     if not force and check_gcs_blob_exists(f'cv/{position_id}_{candidate_id}.pdf'):
         log(f'CV already exists in GCS: cv/{position_id}_{candidate_id}.pdf')
     else:
         with tempfile.TemporaryDirectory() as download_path:
             log(f"downloading position_id: {position_id} candidate_id: {candidate_id}")
-            with driver_contextmanager(download_path, headless, proxy_server, set_trace) as driver:
+            with driver_contextmanager(download_path, headless, proxy_server, set_trace, slow_network=slow_network) as driver:
                 url = config.CANDIDATE_POSITION_CV_URL_TEMPLATE.format(position_id=position_id, candidate_id=candidate_id)
                 log(f"Downloading CV from URL {url}")
                 driver.get(url)
