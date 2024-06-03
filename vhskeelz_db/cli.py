@@ -129,6 +129,17 @@ def update_smoove_candidates_mailing_list(**kwargs):
 
 
 @main.command()
+@click.option('--only-emails')
+@click.option('--limit', type=int)
+@click.option('--debug', is_flag=True)
+def update_sender_candidates_mailing_list(**kwargs):
+    from . import update_sender_candidates_mailing_list
+    with processing_record() as log:
+        update_sender_candidates_mailing_list.main(log, **kwargs)
+    print("OK")
+
+
+@main.command()
 @click.option('--skip-companies', is_flag=True)
 @click.option('--skip-positions', is_flag=True)
 @click.option('--skip-candidates', is_flag=True)

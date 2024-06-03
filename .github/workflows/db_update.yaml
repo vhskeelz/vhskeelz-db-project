@@ -12,6 +12,11 @@ on:
         required: false
         default: false
         description: "Skip the update smoove?"
+      skip_update_sender:
+        type: boolean
+        required: false
+        default: false
+        description: "Skip the update sender?"
       skip_update_salesforce:
         type: boolean
         required: false
@@ -31,6 +36,7 @@ env:
   SERVICE_ACCOUNT_FILE: service_account.json
   SKIP_DB_UPDATE: ${{ inputs.skip_db_update || 'false' }}
   SKIP_UPDATE_SMOOVE: ${{ inputs.skip_update_smoove || 'false' }}
+  SKIP_UPDATE_SENDER: ${{ inputs.skip_update_sender || 'false' }}
   SKIP_UPDATE_SALESFORCE: ${{ inputs.skip_update_salesforce || 'false' }}
   SKIP_SEND_MAILINGS: ${{ inputs.skip_send_mailings || 'false' }}
 jobs:
@@ -81,6 +87,31 @@ jobs:
       - name: mock update smoove
         if: env.SKIP_UPDATE_SMOOVE == 'true'
         run: echo "mock update smoove"
+
+  update_sender:
+    needs:
+      - db_update
+    concurrency:
+      group: update-sender
+    runs-on: ubuntu-22.04
+    steps:
+      - name: checkout
+        uses: actions/checkout@v3
+        if: env.SKIP_UPDATE_SENDER != 'true'
+      - name: setup vhskeelz-db
+        uses: ./.github/actions/setup-vhskeelz-db
+        with:
+          selenium: "false"
+          service_account_b64: ${{ secrets.SERVICE_ACCOUNT_B64 }}
+        if: env.SKIP_UPDATE_SENDER != 'true'
+      - name: run update-sender-candidates-mailing-list
+        env:
+          PROCESSING_RECORD_NAME: ${{ github.event_name }}-github_db_update-update-sender-candidates-mailing-list
+        run: poetry run vhskeelz-db update-sender-candidates-mailing-list
+        if: env.SKIP_UPDATE_SENDER != 'true'
+      - name: mock update sender
+        if: env.SKIP_UPDATE_SENDER == 'true'
+        run: echo "mock update sender"
 
   update_salesforce:
     needs:
@@ -135,13 +166,17 @@ jobs:
         run: echo "mock send mailings - ${{ matrix.mailing_type }}"
 
   final:
-    needs: [update_smoove, update_salesforce, send_mailings]
+    needs: [update_smoove, update_sender, update_salesforce, send_mailings]
     if: always()
     runs-on: ubuntu-22.04
     steps:
       - run: |
           if [ "${{ needs.update_smoove.result }}" != "success" ]; then
             echo "Update Smoove failed"
+            exit 1
+          fi
+          if [ "${{ needs.update_sender.result }}" != "success" ]; then
+            echo "Update Sender failed"
             exit 1
           fi
           if [ "${{ needs.update_salesforce.result }}" != "success" ]; then
