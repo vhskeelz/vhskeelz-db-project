@@ -132,6 +132,11 @@ def update_smoove_candidates_mailing_list(**kwargs):
 @click.option('--skip-companies', is_flag=True)
 @click.option('--skip-positions', is_flag=True)
 @click.option('--skip-candidates', is_flag=True)
+@click.option('--only-company-ids')
+@click.option('--only-position-ids')
+@click.option('--dry-run', is_flag=True)
+@click.option('--only-candidate-ids')
+@click.option('--skip-candidate-cases', is_flag=True)
 def update_salesforce_data(**kwargs):
     from . import update_salesforce_data
     with processing_record() as log:

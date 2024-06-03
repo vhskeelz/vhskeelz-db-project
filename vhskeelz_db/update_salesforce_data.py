@@ -1,4 +1,3 @@
-import contextlib
 import json
 import time
 import base64
@@ -43,12 +42,29 @@ POSITION_CASE_SF_FIELDS = {
     "City__c": {'skeelz_db_field': 'City', 'db_field': 'city'},
     "Description": {'skeelz_db_field': 'Position description', 'db_field': 'position_description'},
     "Subject": {'skeelz_db_field': 'Position name', 'db_field': 'position_name'},
-    # "actice__c": {'skeelz_db_field': '', 'db_field': 'status'},
+    "actice__c": {'skeelz_db_field': 'Position active status', 'db_field': 'active_status',
+                  'lambda': lambda row: False if row['active_status'] == 'Open' else True},
     "employmentType__c": {'skeelz_db_field': 'Employment type', 'db_field': 'employmentType'},
     "hiringUser__c": {'skeelz_db_field': 'Hiring user', 'db_field': 'hiringUser'},
     "positionType__c": {'skeelz_db_field': 'Position type', 'db_field': 'positionType'},
     "Position_id__c": {'skeelz_db_field': 'Position id', 'db_field': 'position_id', 'required': True},
-    'RecordTypeId': {'lambda': lambda row: config.SALESFORCE_CASE_RECORD_TYPE_ID}
+    "Company_id__c": {'skeelz_db_field': 'Company id', 'db_field': 'company_id', 'required': True},
+    'RecordTypeId': {'lambda': lambda row: config.SALESFORCE_CASE_RECORD_TYPE_ID},
+    # there was a problem updating linked record in salesforce
+    # 'AccountId': {'db_field': 'salesforce_account_id'}
+}
+
+CANDIDATE_CASE_SF_FIELDS = {
+    'Position_Id_CSV__c': {'skeelz_db_field': 'Position Id', 'db_field': 'position_id', 'required': True},
+    'Candidate_Id_CSV__c': {'skeelz_db_field': 'Candidate Id', 'db_field': 'candidate_id', 'required': True},
+    'Status_CSV__c': {'skeelz_db_field': 'Status', 'db_field': 'status'},
+    'Reason_CSV__c': {'skeelz_db_field': 'Reason', 'db_field': 'reason'},
+    'Candidate_Position_interested_CSV__c': {'skeelz_db_field': 'Candidate-Position interested', 'db_field': 'candidate_position_interested'},
+    'Candidate_Position_like_CSV__c': {'skeelz_db_field': 'Candidate-Position like', 'db_field': 'candidate_position_like'},
+    'Candidate_Position_fit_rate_CSV__c': {'db_field': 'candidate_position_fit_rate'},
+    'Handled_by_CSV__c': {'skeelz_db_field': 'Handled by', 'db_field': 'handled_by'},
+    'Handled_by_id_CSV__c': {'skeelz_db_field': 'Handled by id', 'db_field': 'handled_by_id'},
+    'RecordTypeId': {'lambda': lambda row: config.SALESFORCE_CANDIDATES_CASE_RECORD_TYPE_ID},
 }
 
 
@@ -66,21 +82,25 @@ class SalesforceException(Exception):
         return None
 
 
-def create_table(conn):
-    with conn.begin():
-        conn.execute('''
-            create table if not exists salesforce_objects (
-                object_type varchar(255),
-                salesforce_id varchar(255),
-                vhskeelz_id varchar(255),
-                created_at timestamp,
-                updated_at timestamp,
-                data_hash varchar(64)
-            );
-            create index if not exists salesforce_objects_object_type_idx on salesforce_objects (object_type);
-            create index if not exists salesforce_objects_salesforce_id_idx on salesforce_objects (salesforce_id);
-            create index if not exists salesforce_objects_vhskeelz_id_idx on salesforce_objects (vhskeelz_id);
-        ''')
+def create_table(conn, dry_run=False):
+    sql = '''
+        create table if not exists salesforce_objects (
+            object_type varchar(255),
+            salesforce_id varchar(255),
+            vhskeelz_id varchar(255),
+            created_at timestamp,
+            updated_at timestamp,
+            data_hash varchar(64)
+        );
+        create index if not exists salesforce_objects_object_type_idx on salesforce_objects (object_type);
+        create index if not exists salesforce_objects_salesforce_id_idx on salesforce_objects (salesforce_id);
+        create index if not exists salesforce_objects_vhskeelz_id_idx on salesforce_objects (vhskeelz_id);
+    '''
+    if dry_run:
+        print('create table (dry run)...')
+    else:
+        with conn.begin():
+            conn.execute(sql)
 
 
 def get_vhskeelz_ids_salesforce_ids(conn, object_type):
@@ -90,17 +110,22 @@ def get_vhskeelz_ids_salesforce_ids(conn, object_type):
     }
 
 
-def update_vhskeelz_id_sf_id(sql_execute, object_type, vhskeelz_id, sf_id, vhskeelz_ids_salesforce_ids, data_hash):
+def update_vhskeelz_id_sf_id(sql_execute, object_type, vhskeelz_id, sf_id, vhskeelz_ids_salesforce_ids, data_hash, dry_run):
     if vhskeelz_id not in vhskeelz_ids_salesforce_ids:
-        sql_execute(f"""
+        sql = f"""
             insert into salesforce_objects (object_type, salesforce_id, vhskeelz_id, created_at, updated_at, data_hash)
             values ('{object_type}', '{sf_id}', '{vhskeelz_id}', now(), now(), '{data_hash}');
-        """)
+        """
     else:
-        assert sf_id == vhskeelz_ids_salesforce_ids[vhskeelz_id][0]
-        sql_execute(f"""
+        if not dry_run:
+            assert sf_id == vhskeelz_ids_salesforce_ids[vhskeelz_id][0]
+        sql = f"""
             update salesforce_objects set updated_at = now(), data_hash = '{data_hash}' where object_type = '{object_type}' and salesforce_id = '{sf_id}' and vhskeelz_id = '{vhskeelz_id}';
-        """)
+        """
+    if dry_run:
+        print(sql)
+    else:
+        sql_execute(sql)
 
 
 def salesforce_login():
@@ -125,16 +150,16 @@ def get_data_hash(data):
     return hashlib.sha256(json.dumps(data, sort_keys=True).encode()).hexdigest()
 
 
-def upsert_object(object_name, key_spec, data, sf_url, sf_token, existing_sf_id, existing_data_hash, log):
+def upsert_object(object_name, key_spec, data, sf_url, sf_token, existing_sf_id, existing_data_hash, log, dry_run):
     data_hash = get_data_hash(data)
+    url = f'{sf_url}/services/data/v58.0/sobjects/{object_name}/{key_spec}'
     if data_hash == existing_data_hash:
         return 'unchanged', existing_sf_id, existing_data_hash
+    elif dry_run:
+        print(f'PATCH {url} {json.dumps(data, ensure_ascii=False)}')
+        return 'updated', '__mock_sf_id__', data_hash
     else:
-        res = requests.patch(
-            f'{sf_url}/services/data/v58.0/sobjects/{object_name}/{key_spec}',
-            headers={'Authorization': f'Bearer {sf_token}', 'Content-Type': 'application/json', },
-            json=data
-        )
+        res = requests.patch(url, headers={'Authorization': f'Bearer {sf_token}', 'Content-Type': 'application/json', }, json=data)
         if res.status_code == 200:
             return 'updated', res.json()['id'], data_hash
         elif res.status_code == 201:
@@ -160,17 +185,18 @@ def remove_object(object_name, key_spec, sf_url, sf_token):
     ).raise_for_status()
 
 
-def create_object(object_name, data, sf_url, sf_token):
-    res = requests.post(
-        f'{sf_url}/services/data/v60.0/sobjects/{object_name}/',
-        headers={'Authorization': f'Bearer {sf_token}', 'Content-Type': 'application/json', },
-        json=data
-    )
-    try:
-        assert res.json()['success']
-        return res.json()['id'], get_data_hash(data)
-    except Exception as e:
-        raise SalesforceException(res.text) from e
+def create_object(object_name, data, sf_url, sf_token, dry_run):
+    url = f'{sf_url}/services/data/v60.0/sobjects/{object_name}/'
+    if dry_run:
+        print(f'POST {url} {json.dumps(data, ensure_ascii=False)}')
+        return '__mock_sf_id__', get_data_hash(data)
+    else:
+        res = requests.post(url, headers={'Authorization': f'Bearer {sf_token}', 'Content-Type': 'application/json', }, json=data)
+        try:
+            assert res.json()['success']
+            return res.json()['id'], get_data_hash(data)
+        except Exception as e:
+            raise SalesforceException(res.text) from e
 
 
 def soql_query(soql, sf_url, sf_token):
@@ -186,7 +212,7 @@ def soql_query(soql, sf_url, sf_token):
         raise Exception(f'{res.text}\n\nsoql=\n{soql}') from e
 
 
-def update_candidate_contacts(conn, sf_url, sf_token, log):
+def update_candidate_contacts(conn, sf_url, sf_token, log, dry_run, only_candidate_ids):
     with conn.begin():
         candidate_ids_sf_ids = get_vhskeelz_ids_salesforce_ids(conn, 'candidate_contact')
         rows = list(conn.execute('''
@@ -200,6 +226,8 @@ def update_candidate_contacts(conn, sf_url, sf_token, log):
         for row in rows:
             row, contact_data = preprocess_row(row, CANDIDATE_CONTACT_SF_FIELDS, log)
             candidate_id = row['candidate_id']
+            if only_candidate_ids and candidate_id not in only_candidate_ids:
+                continue
             try:
                 if candidate_id in candidate_ids_sf_ids:
                     sf_id = candidate_ids_sf_ids[candidate_id][0]
@@ -211,11 +239,11 @@ def update_candidate_contacts(conn, sf_url, sf_token, log):
                     if sf_id:
                         candidate_ids_sf_ids[candidate_id] = (sf_id, None)
                 if not sf_id:
-                    sf_id, data_hash = create_object('Contact', contact_data, sf_url, sf_token)
+                    sf_id, data_hash = create_object('Contact', contact_data, sf_url, sf_token, dry_run)
                     action = 'created'
                 else:
-                    action, sf_id, data_hash = upsert_object('Contact', f'Id/{sf_id}', contact_data, sf_url, sf_token, *candidate_ids_sf_ids[candidate_id], log)
-                update_vhskeelz_id_sf_id(sql_execute, 'candidate_contact', candidate_id, sf_id, candidate_ids_sf_ids, data_hash)
+                    action, sf_id, data_hash = upsert_object('Contact', f'Id/{sf_id}', contact_data, sf_url, sf_token, *candidate_ids_sf_ids[candidate_id], log, dry_run)
+                update_vhskeelz_id_sf_id(sql_execute, 'candidate_contact', candidate_id, sf_id, candidate_ids_sf_ids, data_hash, dry_run)
                 log(f'candidate_id {row["candidate_id"]}: {action} ({sf_id})')
             except Exception as e:
                 ok = False
@@ -229,19 +257,36 @@ def update_candidate_contacts(conn, sf_url, sf_token, log):
                     raise Exception(f'Failed to update candidate_id {candidate_id}') from e
 
 
-def update_position_cases(conn, sf_url, sf_token, log):
+def update_position_cases(conn, sf_url, sf_token, log, only_position_ids, only_company_ids, dry_run):
     sql_fields = ','.join([
-        f'"{conf["skeelz_db_field"]}" "{conf["db_field"]}"'
-        for conf in POSITION_CASE_SF_FIELDS.values()
-        if conf.get('db_field') and conf.get('skeelz_db_field')
+        'salesforce_objects.salesforce_id salesforce_account_id',
+        *[
+            f'skeelz_export_positions."{conf["skeelz_db_field"]}" "{conf["db_field"]}"'
+            for conf in POSITION_CASE_SF_FIELDS.values()
+            if conf.get('db_field') and conf.get('skeelz_db_field')
+        ]
     ])
+    processed_position_ids = set()
     with conn.begin():
         position_ids_sf_ids = get_vhskeelz_ids_salesforce_ids(conn, 'position_case')
-        rows = list(conn.execute(f'SELECT {sql_fields} FROM skeelz_export_positions'))
+        rows = list(conn.execute(f'''
+            SELECT {sql_fields} 
+            FROM skeelz_export_positions, salesforce_objects
+            WHERE skeelz_export_positions."Company id" = salesforce_objects.vhskeelz_id
+                AND salesforce_objects.object_type = 'company_account'
+        '''))
     with db.conn_transaction_sql_handler(conn) as sql_execute:
         for row in rows:
             row, case_data = preprocess_row(row, POSITION_CASE_SF_FIELDS, log)
             position_id = row['position_id']
+            if position_id in processed_position_ids:
+                continue
+            processed_position_ids.add(position_id)
+            company_id = row['company_id']
+            if only_position_ids and position_id not in only_position_ids:
+                continue
+            if only_company_ids and company_id not in only_company_ids:
+                continue
             try:
                 if position_id in position_ids_sf_ids:
                     sf_id = position_ids_sf_ids[position_id][0]
@@ -256,17 +301,17 @@ def update_position_cases(conn, sf_url, sf_token, log):
                     if sf_id:
                         position_ids_sf_ids[position_id] = (sf_id, None)
                 if not sf_id:
-                    sf_id, data_hash = create_object('Case', case_data, sf_url, sf_token)
+                    sf_id, data_hash = create_object('Case', case_data, sf_url, sf_token, dry_run)
                     action = 'created'
                 else:
-                    action, sf_id, data_hash = upsert_object('Case', f'Id/{sf_id}', case_data, sf_url, sf_token, *position_ids_sf_ids[position_id], log)
-                update_vhskeelz_id_sf_id(sql_execute, 'position_case', position_id, sf_id, position_ids_sf_ids, data_hash)
+                    action, sf_id, data_hash = upsert_object('Case', f'Id/{sf_id}', case_data, sf_url, sf_token, *position_ids_sf_ids[position_id], log, dry_run)
+                update_vhskeelz_id_sf_id(sql_execute, 'position_case', position_id, sf_id, position_ids_sf_ids, data_hash, dry_run)
                 log(f'position_id {position_id}: {action} ({sf_id})')
             except Exception as e:
                 raise Exception(f'Failed to update position_id {position_id}') from e
 
 
-def update_company_accounts(conn, sf_url, sf_token, log):
+def update_company_accounts(conn, sf_url, sf_token, log, only_company_ids, dry_run):
     with conn.begin():
         company_ids_sf_ids = get_vhskeelz_ids_salesforce_ids(conn, 'company_account')
         rows = list(conn.execute('''
@@ -278,6 +323,8 @@ def update_company_accounts(conn, sf_url, sf_token, log):
         for row in rows:
             row, account_data = preprocess_row(row, COMPANY_ACCOUNT_SF_FIELDS, log)
             company_name, company_id = row['company_name'], row['companyId']
+            if only_company_ids and company_id not in only_company_ids:
+                continue
             try:
                 if company_id in company_ids_sf_ids:
                     sf_id = company_ids_sf_ids[company_id][0]
@@ -315,14 +362,71 @@ def update_company_accounts(conn, sf_url, sf_token, log):
                     if sf_id:
                         company_ids_sf_ids[company_id] = (sf_id, None)
                 if not sf_id:
-                    sf_id, data_hash = create_object('Account', account_data, sf_url, sf_token)
+                    sf_id, data_hash = create_object('Account', account_data, sf_url, sf_token, dry_run)
                     action = 'created'
                 else:
-                    action, sf_id, data_hash = upsert_object('Account', f'Id/{sf_id}', account_data, sf_url, sf_token, *company_ids_sf_ids[company_id], log)
-                update_vhskeelz_id_sf_id(sql_execute, 'company_account', company_id, sf_id, company_ids_sf_ids, data_hash)
+                    action, sf_id, data_hash = upsert_object('Account', f'Id/{sf_id}', account_data, sf_url, sf_token, *company_ids_sf_ids[company_id], log, dry_run)
+                update_vhskeelz_id_sf_id(sql_execute, 'company_account', company_id, sf_id, company_ids_sf_ids, data_hash, dry_run)
                 log(f'company_id {company_id}: {action} ({sf_id})')
             except Exception as e:
                 raise Exception(f'Failed to process company_id {company_id}') from e
+
+
+def update_candidate_cases(conn, sf_url, sf_token, log, dry_run, only_candidate_ids, only_position_ids):
+    sql_fields = ','.join([
+        f'"{conf["skeelz_db_field"]}" "{conf["db_field"]}"'
+        for conf in CANDIDATE_CASE_SF_FIELDS.values()
+        if conf.get('db_field') and conf.get('skeelz_db_field')
+    ])
+    with conn.begin():
+        candidate_ids_case_sf_ids = get_vhskeelz_ids_salesforce_ids(conn, 'candidate_case')
+        rows = list(conn.execute(f'''
+            SELECT
+                {sql_fields},
+                CAST(REPLACE("Candidate-Position fit rate", '%%', '') AS numeric) candidate_position_fit_rate
+            FROM skeelz_export_candidates_to_positions
+            WHERE "Position Id" in (
+                select distinct "Position id" from skeelz_export_positions where "Position active status" = 'Open'
+            )
+            and CAST(REPLACE("Candidate-Position fit rate", '%%', '') AS numeric) > 99
+            and "Status" not in ('המועמד/ת ויתר/ה', 'דחיית המועמד/ת על ידינו', 'התקבל/ה לעבודה')
+            and "Handled by" is not null
+        '''))
+    with db.conn_transaction_sql_handler(conn) as sql_execute:
+        for row in rows:
+            row, case_data = preprocess_row(row, CANDIDATE_CASE_SF_FIELDS, log)
+            position_id, candidate_id = row['position_id'], row['candidate_id']
+            if only_candidate_ids and candidate_id not in only_candidate_ids:
+                continue
+            if only_position_ids and position_id not in only_position_ids:
+                continue
+            try:
+                candidate_id_position_id = f'{candidate_id},{position_id}'
+                if candidate_id_position_id in candidate_ids_case_sf_ids:
+                    sf_id = candidate_ids_case_sf_ids[candidate_id_position_id][0]
+                else:
+                    log(f'candidate_id,position_id {candidate_id_position_id}: searching for related cases in Salesforce...')
+                    existing_cases = list(soql_query(f"""
+                        SELECT Id FROM Case
+                        WHERE Candidate_Id_CSV__c='{candidate_id}'
+                        AND Position_Id_CSV__c='{position_id}'
+                    """, sf_url, sf_token))
+                    assert len(existing_cases) <= 1, f'Too many existing cases for candidate_id,position_id {candidate_id_position_id}: {existing_cases}'
+                    if len(existing_cases):
+                        sf_id = existing_cases[0]['Id']
+                    else:
+                        sf_id = None
+                    if sf_id:
+                        candidate_ids_case_sf_ids[candidate_id_position_id] = (sf_id, None)
+                if not sf_id:
+                    sf_id, data_hash = create_object('Case', case_data, sf_url, sf_token, dry_run)
+                    action = 'created'
+                else:
+                    action, sf_id, data_hash = upsert_object('Case', f'Id/{sf_id}', case_data, sf_url, sf_token, *candidate_ids_case_sf_ids[candidate_id_position_id], log, dry_run)
+                update_vhskeelz_id_sf_id(sql_execute, 'candidate_case', candidate_id_position_id, sf_id, candidate_ids_case_sf_ids, data_hash, dry_run)
+                log(f'candidate_id,position_id {candidate_id_position_id}: {action} ({sf_id})')
+            except Exception as e:
+                raise Exception(f'Failed to update candidate_id,position_id {candidate_id_position_id}') from e
 
 
 def preprocess_row(row, sf_fields_confs=None, log=None):
@@ -334,7 +438,7 @@ def preprocess_row(row, sf_fields_confs=None, log=None):
                 if not row[conf['db_field']]:
                     msg = f'Missing required field {conf["db_field"]}'
                     if conf.get('default'):
-                        log(f'WARNING {msg}, setting value to "{conf["default"]}" ({row})')
+                        # log(f'WARNING {msg}, setting value to "{conf["default"]}" ({row})')
                         row[conf['db_field']] = conf['default']
                     else:
                         raise Exception(f'{msg} ({row})')
@@ -348,13 +452,19 @@ def preprocess_row(row, sf_fields_confs=None, log=None):
         return row
 
 
-def main(log, skip_companies=False, skip_candidates=False, skip_positions=False):
+def main(log, skip_companies=False, skip_candidates=False, skip_positions=False, only_position_ids=None,
+         only_company_ids=None, dry_run=False, skip_candidate_cases=False, only_candidate_ids=None):
+    only_position_ids = set([p.strip() for p in only_position_ids.split(',') if p.strip()]) if only_position_ids else None
+    only_company_ids = set([c.strip() for c in only_company_ids.split(',') if c.strip()]) if only_company_ids else None
+    only_candidate_ids = set([c.strip() for c in only_candidate_ids.split(',') if c.strip()]) if only_candidate_ids else None
     sf_url, sf_token = salesforce_login()
     with db.get_db_engine().connect() as conn:
-        create_table(conn)
+        create_table(conn, dry_run)
         if not skip_companies:
-            update_company_accounts(conn, sf_url, sf_token, log)
+            update_company_accounts(conn, sf_url, sf_token, log, only_company_ids, dry_run)
         if not skip_candidates:
-            update_candidate_contacts(conn, sf_url, sf_token, log)
+            update_candidate_contacts(conn, sf_url, sf_token, log, dry_run, only_candidate_ids)
         if not skip_positions:
-            update_position_cases(conn, sf_url, sf_token, log)
+            update_position_cases(conn, sf_url, sf_token, log, only_position_ids, only_company_ids, dry_run)
+        if not skip_candidate_cases:
+            update_candidate_cases(conn, sf_url, sf_token, log, dry_run, only_candidate_ids, only_position_ids)
