@@ -132,7 +132,7 @@ jobs:
       - name: run update-salesforce-data
         env:
           PROCESSING_RECORD_NAME: ${{ github.event_name }}-github_db_update-update-salesforce-data
-        run: poetry run vhskeelz-db update-salesforce-data --skip-candidate-cases
+        run: poetry run vhskeelz-db update-salesforce-data
         if: env.SKIP_UPDATE_SALESFORCE != 'true'
       - name: mock update salesforce
         if: env.SKIP_UPDATE_SALESFORCE == 'true'

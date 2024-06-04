@@ -388,9 +388,7 @@ def update_candidate_cases(conn, sf_url, sf_token, log, dry_run, only_candidate_
             WHERE "Position Id" in (
                 select distinct "Position id" from skeelz_export_positions where "Position active status" = 'Open'
             )
-            and CAST(REPLACE("Candidate-Position fit rate", '%%', '') AS numeric) > 99
-            and "Status" not in ('המועמד/ת ויתר/ה', 'דחיית המועמד/ת על ידינו', 'התקבל/ה לעבודה')
-            and "Handled by" is not null
+            and CAST(REPLACE("Candidate-Position fit rate", '%%', '') AS numeric) > 80
         '''))
     with db.conn_transaction_sql_handler(conn) as sql_execute:
         for row in rows:
