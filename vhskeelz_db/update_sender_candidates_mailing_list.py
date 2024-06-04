@@ -24,10 +24,11 @@ def process_output_row(row):
         "email": row['email'],
         "firstname": row['first_name'],
         "lastname": row['last_name'],
-        "phone": row['phone_number'],
+        # "phone": row['phone_number'],  # not used because many rows don't have a valid phone number
         "fields": {
             "city": row['city'],
-            "gender": row['gender']
+            "gender": row['gender'],
+            "phonenumber": row['phone_number']
         },
         "groups": [VHSKEELZ_DB_API_GROUP_ID]
     }
