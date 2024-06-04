@@ -70,10 +70,13 @@ def main(log, only_emails=None, limit=None, debug=False):
                     "Content-Type": "application/json", "Accept": "application/json",
                 }
             )
-            assert res.status_code == 200, f'unexpected status_code: {res.status_code} - {res.text}'
-            res_json = res.json()
-            assert res_json['success'] is True, f'failed to create: {res_json}\n{sender_candidate}'
-            created_emails.add(sender_candidate['email'])
+            if res.status_code == 422:
+                log(f'failed to create due to invalid fields data, will continue anyway: {sender_candidate} - {res.text}')
+            else:
+                assert res.status_code == 200, f'unexpected status_code: {res.status_code} - {res.text}'
+                res_json = res.json()
+                assert res_json['success'] is True, f'failed to create: {res_json}\n{sender_candidate}'
+                created_emails.add(sender_candidate['email'])
         except:
             log(f'failed to create: {sender_candidate}')
             raise
