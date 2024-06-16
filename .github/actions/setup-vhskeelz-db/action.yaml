@@ -33,7 +33,7 @@ runs:
         sudo chown -R root:root chrome-linux64 &&\
         sudo chmod +x chrome-linux64/chrome &&\
         sudo ln -s `pwd`/chrome-linux64/chrome /usr/bin/chrome &&\
-        rm -f /usr/bin/google-chrome &&\
+        sudo rm -f /usr/bin/google-chrome &&\
         sudo ln -s `pwd`/chrome-linux64/chrome /usr/bin/google-chrome &&\
         unzip chromedriver.zip &&\
         sudo mv chromedriver-linux64/chromedriver /usr/local/bin/ &&\
