@@ -4,10 +4,12 @@ import time
 import tempfile
 import traceback
 import contextlib
+from urllib3.exceptions import HTTPError
 
 import backoff
 import gspread
 import requests
+from requests.exceptions import RequestException
 from google.oauth2.service_account import Credentials as ServiceAccountCredentials
 
 from . import config, download_position_candidate_cv
@@ -118,6 +120,7 @@ def get_skeelz_export_cookies(log):
     return cookies
 
 
+@backoff.on_exception(backoff.expo, (RequestException, HTTPError), max_time=60*30)
 def extract_skeelz_export_download(log, url, target_filename):
     cookies = get_skeelz_export_cookies(log)
     download_post_streaming(url, target_filename, cookies={c['name']: c['value'] for c in cookies})
