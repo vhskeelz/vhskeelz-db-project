@@ -82,6 +82,7 @@ jobs:
       - name: run update-smoove-candidates-mailing-list
         env:
           PROCESSING_RECORD_NAME: ${{ github.event_name }}-github_db_update-update-smoove-candidates-mailing-list
+          PROCESSING_RECORD_CONTEXT_IGNORE_EXCEPTIONS_IF_RECENT_SUCCESS: "true"
         run: poetry run vhskeelz-db update-smoove-candidates-mailing-list
         if: env.SKIP_UPDATE_SMOOVE != 'true'
       - name: mock update smoove
