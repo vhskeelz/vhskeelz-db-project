@@ -105,30 +105,25 @@ def get_extract_skeelz_exports_context(cache, needs_skeelz_export=True):
         yield cache['extract_skeelz_exports_context']
 
 
-def get_skeelz_export_cookies(cache, log, refresh=False):
-    if not refresh and 'extract_skeelz_exports_cookies' in cache:
-        cookies = cache['extract_skeelz_exports_cookies']
-    else:
-        with get_extract_skeelz_exports_context(cache, needs_skeelz_export=True) as (download_path, driver):
-            driver.get(config.CANDIDATE_POSITION_CV_URL_TEMPLATE.format(position_id='', candidate_id=''))
-            download_position_candidate_cv.login(log, driver)
-            for i in range(20):
-                time.sleep(1)
-                if check_cookies(driver.get_cookies()):
-                    break
-            cookies = cache['extract_skeelz_exports_cookies'] = driver.get_cookies()
+def get_skeelz_export_cookies(log):
+    with get_extract_skeelz_exports_context({}, needs_skeelz_export=True) as (download_path, driver):
+        driver.get(config.CANDIDATE_POSITION_CV_URL_TEMPLATE.format(position_id='', candidate_id=''))
+        download_position_candidate_cv.login(log, driver)
+        for i in range(20):
+            time.sleep(1)
+            if check_cookies(driver.get_cookies()):
+                break
+        cookies = driver.get_cookies()
     assert check_cookies(cookies)
     return cookies
 
 
-def extract_skeelz_export_download(cache, log, url, target_filename):
-    cookies = get_skeelz_export_cookies(cache, log, refresh=True)
+def extract_skeelz_export_download(log, url, target_filename):
+    cookies = get_skeelz_export_cookies(log)
     download_post_streaming(url, target_filename, cookies={c['name']: c['value'] for c in cookies})
 
 
 def extract_skeelz_exports(log, only_table_name=None, cache=None):
-    if not cache:
-        cache = {}
     log('Extracting skeelz_exports...')
     for table_name, table_config in config.EXTRACT_DATA_TABLES.items():
         if table_config['type'] != 'skeelz_export':
@@ -138,7 +133,7 @@ def extract_skeelz_exports(log, only_table_name=None, cache=None):
         target_filename = os.path.join(config.EXTRACT_DATA_PATH, f'{table_name}.csv')
         log(f'Downloading {table_name} to {target_filename}')
         try:
-            extract_skeelz_export_download(cache, log, table_config['url'], target_filename)
+            extract_skeelz_export_download(log, table_config['url'], target_filename)
             yield table_name
         except:
             if table_config.get('on_failure') == 'skip':
