@@ -1,9 +1,9 @@
 name: Scheduled mailing - new_matches
 on:
   workflow_dispatch:
-  schedule:
+  # schedule:
     # Every day at 14:03 (UTC) == 17:03 (Israel)
-    - cron: '3 14 * * *'
+   # - cron: '3 14 * * *'
 jobs:
   scheduled_mailing_new_matches:
     runs-on: ubuntu-22.04
