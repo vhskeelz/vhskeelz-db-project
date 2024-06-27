@@ -49,6 +49,9 @@ def get_db_status_table_name(mailing_type):
 def run_migrations(log, mailing_type):
     log(f'Running migrations for {mailing_type}...')
     table_name = get_db_status_table_name(mailing_type)
+    extra_fields = ''
+    if table_name == 'candidate_offers_interested_mailing_status':
+        extra_fields = ', salesforce_status text'
     with get_db_engine().connect() as conn:
         with conn.begin():
             conn.execute(dedent(f'''
@@ -57,6 +60,7 @@ def run_migrations(log, mailing_type):
                     "positionOfferId" text not null,
                     status text not null,
                     date timestamp not null default now()
+                    {extra_fields}
                 );
             '''))
     log('Migrations done.')

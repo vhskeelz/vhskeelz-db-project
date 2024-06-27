@@ -57,6 +57,8 @@ jobs:
       - name: run load_data
         env:
           PROCESSING_RECORD_NAME: ${{ github.event_name }}-github_db_update-load-data
+          PROCESSING_RECORD_CONTEXT_IGNORE_EXCEPTIONS_IF_RECENT_SUCCESS: "true"
+          PROCESSING_RECORD_CONTEXT_IGNORE_EXCEPTIONS_IF_RECENT_SUCCESS_INTERVAL: "12 hour"
         run: xvfb-run poetry run vhskeelz-db load-data --extract
         if: env.SKIP_DB_UPDATE != 'true'
       - name: mock db update
@@ -133,7 +135,7 @@ jobs:
       - name: run update-salesforce-data
         env:
           PROCESSING_RECORD_NAME: ${{ github.event_name }}-github_db_update-update-salesforce-data
-        run: poetry run vhskeelz-db update-salesforce-data --skip-candidate-cases
+        run: poetry run vhskeelz-db update-salesforce-data
         if: env.SKIP_UPDATE_SALESFORCE != 'true'
       - name: mock update salesforce
         if: env.SKIP_UPDATE_SALESFORCE == 'true'

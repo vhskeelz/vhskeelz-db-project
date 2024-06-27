@@ -56,11 +56,12 @@ def finish(process_name, process_id):
 
 def ignore_exceptions_if_recent_success(process_name):
     if config.PROCESSING_RECORD_CONTEXT_IGNORE_EXCEPTIONS_IF_RECENT_SUCCESS:
+        interval = config.PROCESSING_RECORD_CONTEXT_IGNORE_EXCEPTIONS_IF_RECENT_SUCCESS_INTERVAL
         with get_db_engine().connect() as conn:
             with conn.begin():
                 row = conn.execute(dedent(f'''
                     select 1 from processing_record
-                    where process_name = '{process_name}' and status = 'success' and finished_at >= now() - interval '2 day'
+                    where process_name = '{process_name}' and status = 'success' and finished_at >= now() - interval '{interval}'
                 ''')).first()
                 if row:
                     return True

@@ -120,7 +120,7 @@ def get_skeelz_export_cookies(log):
     return cookies
 
 
-@backoff.on_exception(backoff.expo, (RequestException, HTTPError), max_time=60*30)
+@backoff.on_exception(backoff.constant, (RequestException, HTTPError), max_tries=5, interval=2)
 def extract_skeelz_export_download(log, url, target_filename):
     cookies = get_skeelz_export_cookies(log)
     download_post_streaming(url, target_filename, cookies={c['name']: c['value'] for c in cookies})

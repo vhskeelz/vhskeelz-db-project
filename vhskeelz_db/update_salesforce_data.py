@@ -2,6 +2,7 @@ import json
 import time
 import base64
 import hashlib
+from textwrap import dedent
 
 import jwt
 import requests
@@ -388,7 +389,12 @@ def update_candidate_cases(conn, sf_url, sf_token, log, dry_run, only_candidate_
             WHERE "Position Id" in (
                 select distinct "Position id" from skeelz_export_positions where "Position active status" = 'Open'
             )
-            and CAST(REPLACE("Candidate-Position fit rate", '%%', '') AS numeric) > 80
+            and "Candidate-Position interested" = '1'
+            and "Candidate Id" || '_' || "Position Id" in (
+                select candidate_id || '_' || "positionOfferId" 
+                from candidate_offers_interested_mailing_status
+                where salesforce_status is null or salesforce_status not in ('skip', 'updated')
+            )
         '''))
     with db.conn_transaction_sql_handler(conn) as sql_execute:
         for row in rows:
@@ -422,6 +428,11 @@ def update_candidate_cases(conn, sf_url, sf_token, log, dry_run, only_candidate_
                 else:
                     action, sf_id, data_hash = upsert_object('Case', f'Id/{sf_id}', case_data, sf_url, sf_token, *candidate_ids_case_sf_ids[candidate_id_position_id], log, dry_run)
                 update_vhskeelz_id_sf_id(sql_execute, 'candidate_case', candidate_id_position_id, sf_id, candidate_ids_case_sf_ids, data_hash, dry_run)
+                sql_execute(dedent(f'''
+                    update candidate_offers_interested_mailing_status
+                    set salesforce_status = 'updated'
+                    where candidate_id = '{candidate_id}' and "positionOfferId" = '{position_id}';
+                '''))
                 log(f'candidate_id,position_id {candidate_id_position_id}: {action} ({sf_id})')
             except Exception as e:
                 raise Exception(f'Failed to update candidate_id,position_id {candidate_id_position_id}') from e
