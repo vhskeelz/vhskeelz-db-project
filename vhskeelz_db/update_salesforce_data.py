@@ -384,8 +384,9 @@ def update_candidate_cases(conn, sf_url, sf_token, log, dry_run, only_candidate_
         rows = list(conn.execute(f'''
             SELECT
                 {sql_fields},
-                CAST(REPLACE("Candidate-Position fit rate", '%%', '') AS numeric) candidate_position_fit_rate
-            FROM skeelz_export_candidates_to_positions
+                CAST(REPLACE("Candidate-Position fit rate", '%%', '') AS numeric) candidate_position_fit_rate,
+                salesforce_objects.salesforce_id salesforce_contact_id
+            FROM skeelz_export_candidates_to_positions, salesforce_objects
             WHERE "Position Id" in (
                 select distinct "Position id" from skeelz_export_positions where "Position active status" = 'Open'
             )
@@ -393,12 +394,16 @@ def update_candidate_cases(conn, sf_url, sf_token, log, dry_run, only_candidate_
             and "Candidate Id" || '_' || "Position Id" in (
                 select candidate_id || '_' || "positionOfferId" 
                 from candidate_offers_interested_mailing_status
-                where salesforce_status is null or salesforce_status not in ('skip', 'updated')
+                where salesforce_status is null or salesforce_status not in ('skip')
             )
+            and salesforce_objects.object_type = 'candidate_contact'
+            and salesforce_objects.vhskeelz_id = "Candidate Id"
         '''))
     with db.conn_transaction_sql_handler(conn) as sql_execute:
         for row in rows:
             row, case_data = preprocess_row(row, CANDIDATE_CASE_SF_FIELDS, log)
+            case_data['ContactId'] = row['salesforce_contact_id']
+            case_data['Subject'] = 'הגשת מועמדות'
             position_id, candidate_id = row['position_id'], row['candidate_id']
             if only_candidate_ids and candidate_id not in only_candidate_ids:
                 continue
