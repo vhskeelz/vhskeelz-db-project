@@ -147,7 +147,10 @@ jobs:
     runs-on: ubuntu-22.04
     strategy:
       matrix:
-        mailing_type: [interested, new_position, num_fits]
+        mailing_type:
+        # - interested  # there is an error with selenium processing for this mailing type
+        - new_position
+        - num_fits
     concurrency:
       group: mailing_${{ matrix.mailing_type }}
     steps:

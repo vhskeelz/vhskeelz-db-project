@@ -419,9 +419,12 @@ def update_candidate_cases(conn, sf_url, sf_token, log, dry_run, only_candidate_
                         SELECT Id FROM Case
                         WHERE Candidate_Id_CSV__c='{candidate_id}'
                         AND Position_Id_CSV__c='{position_id}'
+                        ORDER BY CreatedDate DESC
                     """, sf_url, sf_token))
-                    assert len(existing_cases) <= 1, f'Too many existing cases for candidate_id,position_id {candidate_id_position_id}: {existing_cases}'
-                    if len(existing_cases):
+                    if len(existing_cases) > 1:
+                        log(f'WARNING: Too many existing cases for candidate_id,position_id {candidate_id_position_id}: {existing_cases}')
+                        sf_id = existing_cases[0]['Id']
+                    elif len(existing_cases):
                         sf_id = existing_cases[0]['Id']
                     else:
                         sf_id = None
