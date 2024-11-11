@@ -173,6 +173,9 @@ def upsert_object(object_name, key_spec, data, sf_url, sf_token, existing_sf_id,
             elif error_codes == ['CANNOT_EXECUTE_FLOW_TRIGGER']:
                 log(f'WARNING: cannot execute flow trigger: {object_name}/{key_spec}')
                 return 'updated', existing_sf_id, data_hash
+            elif error_codes == ['INVALID_CROSS_REFERENCE_KEY']:
+                log(f'WARNING: invalid cross reference key: {object_name}/{key_spec}')
+                return 'updated', existing_sf_id, data_hash
             else:
                 raise Exception(f"Unexpected 400 error: {res.content}")
         else:
